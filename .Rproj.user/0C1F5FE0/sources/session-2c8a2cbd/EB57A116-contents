@@ -1,0 +1,182 @@
+# Filter data based on the region and age group
+filter_data <- function (data, truth_data, loc = "DE", age_gr = "00+", extra_delay = 0, truth_past = 50, ...) {
+  
+  data <- data |> filter(location == loc, age_group == age_gr)
+  truth_data <- truth_data |> filter(location == loc, age_group == age_gr)
+  
+  # Filter based on the common dates
+  models <- unique(data$model)
+  
+  r_tmp <- list()
+  for (i in 1:length(models)) {
+    data_tmp <- data |> filter(model == models[i])
+    r_tmp[[i]] <- range(data_tmp$forecast_date)
+    
+    if (i == 1) {
+      r <- r_tmp[[i]]
+    } else {
+      r <- c(max(r[1], r_tmp[[i]][1]), min(r[2], r_tmp[[i]][2]))
+    }
+  }
+  
+  truth_r <- range(truth_data$date)
+  r <- c(max(r[1], truth_r[1]), min(r[2], truth_r[2]))
+  
+  data <- data |> filter((forecast_date >= (r[1] + extra_delay)) & (forecast_date <= r[2]))
+  truth_data <- truth_data |> filter((date >= (r[1] + extra_delay - truth_past)) & (date <= r[2]))
+  
+  list(data = data, truth_data = truth_data)
+}
+
+# Compute the Weighted Interval Score (WIS)
+# probs: vector of probabilities
+# quant: vector of quantiles
+# y: observation
+compute_wis <- function (probs, quant, y, ...) {
+  if (length(probs) != length(quant)) { stop("'probs' and 'quant' must have the same size.") }
+  partial <- apply(X = data.frame(probs = c(probs), quant = c(quant)), MARGIN = 1, FUN = function (x) {
+    2 * (as.integer(y <= x[2]) - x[1]) * (x[2] - y)
+  })
+  mean(partial)
+}
+
+# Compute WIS given the "data" and "truth_data" objects
+# return: N x M matrix with the computed WIS, such that N corresponds to the number of days and M to the number of models
+compute_wis_data <- function (data, truth_data, start_date, end_date, horizon, models, method = "median", ...) {
+  N <- as.integer(end_date - start_date)
+  wis <- matrix(data = 0, nrow = (N + 1), ncol = length(models))
+  
+  if ("date" %in% colnames(truth_data)) { a <- TRUE } else { a <- FALSE }
+  
+  b <- txtProgressBar(min = 0, max = N, initial = 0) 
+  for (n in 0:N) {
+    dt <- start_date + n
+    td <- dt + horizon
+    
+    sliced_data <- data |> filter(forecast_date == dt, target_end_date == td, type == "quantile")
+    
+    if (a) {
+      y <- truth_data |> filter(date == td) |> select(truth) |> as.integer()  
+    } else {
+      y <- naive_ensemble |> filter(forecast_date == dt, target_end_date == td, model == method, quantile == 0.5) |> select(value) |> as.integer() 
+    }
+    
+    count <- 1
+    for (m in models) {
+      wis[(n + 1), count] <- compute_wis(probs = sliced_data[sliced_data$model == m, ]$quantile, quant = sliced_data[sliced_data$model == m, ]$value, y = y)  
+      count <- count + 1
+    }
+    setTxtProgressBar(b, n)
+  }
+  close(b)
+  
+  wis
+}
+
+# Select the nowcasts from all models and quantiles given the settings (Auxiliary function)
+# return: M x Q matrix, such that M corresponds to the number of models and Q to the number of quantiles
+select_nowcasts <- function (data, dt, horizon, models, n_quantiles = 7, ...) { 
+  values <- matrix(data = 0, nrow = length(models), ncol = n_quantiles)
+  
+  for (m in 1:length(models)) { 
+    tmp <- data |> filter(forecast_date == dt, target_end_date == dt + horizon, type == "quantile", model == models[m]) |> select(value) |> unlist() 
+    if (length(tmp) != 0) {
+      values[m, ] <- tmp
+    } else {
+      values[m, ] <- rep(NA, n_quantiles)
+    }
+  }
+  
+  values
+}
+
+# Compute weights for the ensemble approach
+# wis: vector of scores for all models
+compute_weights <- function (wis = NULL, ...) {
+  wights <- 1 / wis
+  wights <- wights / sum(wights)
+  wights
+}
+
+# Compute ensemble prediction based on the mean
+# values: matrix of M x Q, where M is the number of models and Q is the number of quantiles
+ensemble_mean <- function (values, ...) { 
+  list(nowcast = apply(X = values, MARGIN = 2, FUN = mean), weights = NULL)
+}
+
+# Compute ensemble prediction based on the median
+# values: matrix of M x Q, where M is the number of models and Q is the number of quantiles
+ensemble_median <- function (values, ...) { 
+  list(nowcast = apply(X = values, MARGIN = 2, FUN = median), weights = NULL)
+}
+
+# Compute ensemble prediction based on the weights defined as (1 / WIS)
+# values: matrix of M x Q, where M is the number of models and Q is the number of quantiles
+# weights: vector of size M with the pre-computed weights based on the WIS
+ensemble_wis <- function (values, weights, mean = TRUE, ...) {
+  if (mean) {
+    res <- weights %*% values
+  } else {
+    print("Yet to be implemented")
+  }
+  list(nowcast = res, weights = weights)
+}
+
+# Reparameterize the weights as a function of theta
+par_weights <- function (theta, wis, ...) {
+  (exp(- theta * wis)) / (sum(exp(- theta * wis)))
+}
+
+# Cost function to be minimized (internal function)
+# cost_function_wis <- function (weights, probs, values, y, ...) { compute_wis(probs = probs, quant = weights %*% values, y = y) }
+cost_function <- function (theta, probs, values, y, wis, ...) { 
+  w <- par_weights(theta = theta, wis = wis)
+  compute_wis(probs = probs, quant = w %*% values, y = y)
+}
+
+# Compute ensemble prediction, such that the WIS is minimized (regression approach)
+# values: matrix of M x Q, where M is the number of models and Q is the number of quantiles
+# y: true value
+# weights: vector of size M with the pre-computed weights based on the WIS. They will be used as initial values
+# probs: vector of size Q with the quantile levels
+# ensemble_pinball <- function (values, y, initial_weights = NULL, probs = c(0.025, 0.100, 0.250, 0.500, 0.750, 0.900, 0.975), ...) {
+#   M <- nrow(values)
+#   
+#   if (is.null(initial_weights)) { initial_weights <- rep((1 / M), M) }
+#   
+#   w <- optim(par = initial_weights, fn = cost_function_wis, probs = probs, values = values, y = y)$par
+#   
+#   list(nowcast = w %*% values, weights = w)
+# }
+ensemble_pinball <- function (values, y, initial_theta = 0, probs = c(0.025, 0.100, 0.250, 0.500, 0.750, 0.900, 0.975), lower = -1, upper = 1, ...) {
+  M <- nrow(values)
+  
+  wis <- apply(X = values, MARGIN = 1, FUN = compute_wis, probs = probs, y = y)
+  
+  theta <- optimize(f = cost_function, lower = lower, upper = upper, probs = probs, values = values, y = y, wis = wis, maximum = FALSE)$minimum
+  w <- par_weights(theta = theta, wis = wis)
+  
+  list(nowcast = w %*% values, weights = w, theta = theta)
+}
+
+# Compute ensembled nowcast based on different approaches
+# values: matrix of M x Q, where M is the number of models and Q is the number of quantiles
+# weights: vector of size M with the pre-computed weights based on the WIS
+# y: true value
+compute_ensemble <- function (values, weights = NULL, y = NULL, method = c("mean", "median", "wis", "pinball"), lower = -1, upper = 1, ...) {
+  m <- method[1]
+  
+  if (m == "mean") {
+    res <- ensemble_mean(values = values)
+  } else if (m == "median") {
+    res <- ensemble_median(values = values)
+  } else if (m == "wis") {
+    res <- ensemble_wis(values = values, weights = weights)
+  } else if (m == "pinball") {
+    res <- ensemble_pinball(values = values, y = y, lower = lower, upper = upper)
+  } else {
+    stop("Choose a valid method.")
+  }
+  
+  res
+}
