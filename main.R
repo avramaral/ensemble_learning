@@ -19,16 +19,15 @@ r <- range(data$forecast_date)
 
 horizon <- -28:0
 
-if (TRUE) {
+start_date <- r[1]
+end_date   <- r[2]
+if (FALSE) {
   wis <- list()
   wis_cm <- list()
   for (h in horizon) {
     print(paste("Horizon: ", h, sep = ""))
-    start_date <- r[1]
-    end_date   <- r[2]
     
-    # "truth_data" might also be "truth_data" (instead of "naive_ensemble")
-    wis[[as.character(h)]] <- compute_wis_data(data = data, truth_data = naive_ensemble, start_date = start_date, end_date = end_date, horizon = h, models = models, method = "median")
+    wis[[as.character(h)]] <- compute_wis_data(data = values, truth_data = y, start_date = start_date, end_date = end_date, horizon = h, models = models, method = "median")
     wis_cm[[as.character(h)]] <- wis[[as.character(h)]] |> colMeans(na.rm = TRUE)
   }
   saveRDS(object = wis, file = "TMP/wis.RDS")
@@ -61,29 +60,32 @@ new_data <- as_tibble(new_data)
 probs <- c(0.025, 0.100, 0.250, 0.500, 0.750, 0.900, 0.975)
 method <- "pinball" # c("mean", "median", "wis", "pinball")
 
-days <- seq(r[1] + 1, r[2], by = "1 day") # I have to add 1, so that I can always retrieve data about (t - 1) days at least
+skip_days <- 1
+days <- seq(r[1] + skip_days, r[2], by = "1 day") # I have to add 1, so that I can always retrieve data about (t - 1) days at least
 
-retrieve_values <- TRUE
+retrieve_values <- FALSE
 
-if (retrieve_values) { y <- list(); values <- list(); current <- list() } else {
+if (retrieve_values) { y <- list(); values <- list(); current <- list(); y_current <- list() } else {
   y <- readRDS(file = "TMP/y.RDS")
-  values <- readRDS(file = "TMP/values.RDS")
   current <- readRDS(file = "TMP/current.RDS")
+  values <- readRDS(file = "TMP/values.RDS")
+  y_current <- readRDS(file = "TMP/y_current.RDS")
 }
 
 e <- list()
 
+total_days <- 1
 count <- 1
-for (k in 1:length(days)) { # length(days)) {
+for (k in 1:length(days)) { # 1:length(days)) {
   
   d <- days[k]
   
   print(paste(d, " (", sprintf("%03d", count), "/", sprintf("%03d", length(days)), ")", sep = ""))
   
-  e[[k]] <- list()
+  e[[as.character(d)]] <- list()
   b <- txtProgressBar(min = 1, max = length(horizon), initial = 1) 
   
-  if (retrieve_values) { values[[as.character(d)]] <- list(); current[[as.character(d)]] <- list() }
+  if (retrieve_values) { values[[as.character(d)]] <- list(); y[[as.character(d)]] <- list(); current[[as.character(d)]] <- list(); y_current[[as.character(d)]] <- list() }
   
   for (i in 1:length(horizon)) {
     dt <- d # + i
@@ -91,40 +93,42 @@ for (k in 1:length(days)) { # length(days)) {
     
     if (retrieve_values) {
       # Pay attention to the order: -1, -2, ..., -90
-      y[[as.character(d)]] <- select_real_data(naive_ensemble = naive_ensemble, truth_data = truth_data, dt = dt, horizon = h) 
+      y[[as.character(d)]][[as.character(h)]] <- select_real_data(naive_ensemble = naive_ensemble, truth_data = truth_data, dt = dt, horizon = h, total_days = total_days)
       if (method == "pinball") {
-        values[[as.character(d)]][[as.character(h)]] <- select_nowcasts(data = data, dt = dt, horizon = h, models = models)
+        values[[as.character(d)]][[as.character(h)]] <- select_nowcasts(data = data, dt = dt, horizon = h, models = models, total_days = total_days)
       }
       current[[as.character(d)]][[as.character(h)]] <- select_nowcasts(data = data, dt = dt, horizon = h, models = models, current = TRUE)
+      y_current[[as.character(d)]][[as.character(h)]] <- select_real_data(naive_ensemble = naive_ensemble, truth_data = truth_data, dt = dt, horizon = h, current = TRUE)
     }
     
-    # e[[k]][[as.character(h)]] <- compute_ensemble(values = values[[as.character(d)]][[as.character(h)]],
-    #                                          weights = weights[[as.character(h)]],
-    #                                          y = y[[as.character(d)]],
-    #                                          # current = current[[as.character(d)]][[as.character(h)]],
-    #                                          method = method,
-    #                                          lower = -1, upper = 1)
-    
-    # for (q in 1:7) {
-    #   value <- e[[as.character(h)]]$nowcast
-    #   if (class(value)[1] == "numeric") {
-    #     value <- value[q]
-    #   } else  {
-    #     value <- value[1, q]
-    #   }
-    #   new_data <- new_data |> add_row(location = "DE", 
-    #                                   age_group = "00+", 
-    #                                   forecast_date = d, 
-    #                                   target_end_date = (d + h), 
-    #                                   target = paste(h, " day ahead inc hosp", sep = ""), 
-    #                                   type = "quantile",
-    #                                   quantile =  probs[q],
-    #                                   value = value,
-    #                                   pathogen = "COVID-19",
-    #                                   model = method, 
-    #                                   retrospective = FALSE)
-    #}
-    
+    e[[as.character(d)]][[as.character(h)]] <- compute_ensemble(values = values[[as.character(d)]][[as.character(h)]],
+                                               current = current[[as.character(d)]][[as.character(h)]],
+                                               weights = weights[[as.character(h)]],
+                                               y = y[[as.character(d)]][[as.character(h)]],
+                                               y_current = y_current[[as.character(d)]][[as.character(h)]],
+                                               method = method,
+                                               lower = 0, upper = 1)
+
+    for (q in 1:7) {
+      value <- e[[as.character(d)]][[as.character(h)]]$nowcast
+      if (class(value)[1] == "numeric") {
+        value <- value[q]
+      } else  {
+        value <- value[1, q]
+      }
+      new_data <- new_data |> add_row(location = "DE",
+                                      age_group = "00+",
+                                      forecast_date = d,
+                                      target_end_date = (d + h),
+                                      target = paste(h, " day ahead inc hosp", sep = ""),
+                                      type = "quantile",
+                                      quantile =  probs[q],
+                                      value = value,
+                                      pathogen = "COVID-19",
+                                      model = method,
+                                      retrospective = FALSE)
+    }
+     
     setTxtProgressBar(b, i)
   }
   close(b)
@@ -132,10 +136,12 @@ for (k in 1:length(days)) { # length(days)) {
   count <- count + 1
 }
 
-if (retrieve_values) {
-  saveRDS(object = y, file = "TMP/y.RDS")
-  saveRDS(object = values, file = "TMP/values.RDS")
-}
+# if (retrieve_values) {
+#   saveRDS(object = y, file = "TMP/y.RDS")
+#   saveRDS(object = current, file = "TMP/current.RDS")
+#   saveRDS(object = values, file = "TMP/values.RDS")
+#   saveRDS(object = y_current, file = "TMP/y_current.RDS")
+# }
 
 # saveRDS(object = new_data, file = paste("TMP/ensemble_", method,".RDS", sep = ""))
 
@@ -152,15 +158,17 @@ horizon <- -28:0
 cmb_wis <- list()
 cmb_wis_cm <- list()
 
+drop_first_days <- 1
+
 for (h in horizon) {
   print(paste("Horizon: ", h, sep = ""))
   start_date <- r[1]
   end_date   <- r[2]
   
-  cmb_wis[[as.character(h)]] <- compute_wis_data(data = cmb_data, truth_data = truth_data, start_date = start_date, end_date = end_date, horizon = h, models = cmb_models) 
+  cmb_wis[[as.character(h)]] <- compute_wis_data(data = cmb_data, truth_data = truth_data, start_date = start_date + drop_first_days, end_date = end_date, horizon = h, models = cmb_models) 
   cmb_wis_cm[[as.character(h)]] <- cmb_wis[[as.character(h)]] |> colMeans(na.rm = TRUE)
 }
 
-matplot(x = horizon, y = do.call(what = rbind, args = cmb_wis_cm)[, 1:2], type = "l", col = cmb_colors, lty = 1, xlab = "Horizon (days)", ylab = "WIS", lwd = 3, ylim = c(0, max(unlist(cmb_wis_cm), na.rm = TRUE)), main = "National level")
+matplot(x = horizon, y = do.call(what = rbind, args = cmb_wis_cm)[, 1:3], type = "l", col = cmb_colors, lty = 1, xlab = "Horizon (days)", ylab = "WIS", lwd = 3, ylim = c(0, max(unlist(cmb_wis_cm), na.rm = TRUE)), main = "National level")
 legend("topleft", inset = 0.01, legend = cmb_models, col = cmb_colors, pch = 15, box.lty = 0)
 

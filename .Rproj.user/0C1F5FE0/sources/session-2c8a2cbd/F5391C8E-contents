@@ -153,17 +153,17 @@ ensemble_pinball <- function (values, y, initial_theta = 0, probs = c(0.025, 0.1
 # values: matrix of M x Q, where M is the number of models and Q is the number of quantiles
 # weights: vector of size M with the pre-computed weights based on the WIS
 # y: true value
-compute_ensemble <- function (values, weights = NULL, y = NULL, method = c("mean", "median", "wis", "pinball"), lower = -1, upper = 1, ...) {
+compute_ensemble <- function (values, current, weights = NULL, y = NULL, y_current = NULL, method = c("mean", "median", "wis", "pinball"), lower = 0, upper = 1, ...) {
   m <- method[1]
   
   if (m == "mean") {
-    res <- ensemble_mean(values = values)
+    res <- ensemble_mean(values = current[[1]])
   } else if (m == "median") {
-    res <- ensemble_median(values = values)
+    res <- ensemble_median(values = current[[1]])
   } else if (m == "wis") {
-    res <- ensemble_wis(values = values, weights = weights)
+    res <- ensemble_wis(values = current[[1]], weights = weights)
   } else if (m == "pinball") {
-    res <- ensemble_pinball(values = values, y = y, lower = lower, upper = upper)
+    res <- ensemble_pinball(values = values, current = current[[1]], y = y, y_current = y_current, lower = lower, upper = upper)
   } else {
     stop("Choose a valid method.")
   }
