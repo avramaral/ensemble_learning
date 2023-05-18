@@ -181,7 +181,7 @@ ensemble_pinball <- function (values, current, y, y_current, initial_theta = 0, 
   }
   
   w <- par_weights(theta = theta, wis = apply(X = wis, MARGIN = 2, FUN = mean))
-                     # apply(X = current, MARGIN = 1, FUN = compute_wis, probs = probs, y = y_current))
+  # apply(X = current, MARGIN = 1, FUN = compute_wis, probs = probs, y = y_current))
   
   list(nowcast = w %*% current, weights = w, theta = theta)
 }
