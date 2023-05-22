@@ -11,14 +11,16 @@ filtered_data <- filter_data(data = data, truth_data = truth_data, loc = "DE", a
 data <- filtered_data$data
 truth_data <- filtered_data$truth_data
 
-models <- c("Epiforecasts", "ILM", "KIT", "LMU", "RIVM", "RKI", "SU", "SZ") #, "MeanEnsemble", "MedianEnsemble")
-colors <- c("#B30000", "#E69F00", "#56B4E9", "#F0E442", "#80471C", "#3C4AAD", "#CC79A7", "#000000") #, "#009E73", "#60D1B3")
+models <- c("KIT", "LMU") #c("Epiforecasts", "ILM", "KIT", "LMU", "RIVM", "RKI", "SU", "SZ") #, "MeanEnsemble", "MedianEnsemble")
+colors <- c("#56B4E9", "#F0E442") #c("#B30000", "#E69F00", "#56B4E9", "#F0E442", "#80471C", "#3C4AAD", "#CC79A7", "#000000") #, "#009E73", "#60D1B3")
 r <- range(data$forecast_date)
 
 horizon <- -28:0
 probs <- c(0.025, 0.100, 0.250, 0.500, 0.750, 0.900, 0.975)
 
 ###########################################################################
+
+# Slice the original data files and return a "training set" (both for the nowcasts and real values) based on the past X days.
 
 if (FALSE) {
   retrieved_data <- retrieve_data(data = data, truth_data = truth_data, naive_ensemble = naive_ensemble, models = models, horizon = horizon, start_date = r[1], end_date = r[2], skip_first_days = 1, total_days = 90)
@@ -35,6 +37,8 @@ if (FALSE) {
 }
 
 ###########################################################################
+
+# Compute WIS and (untrained) weights (as the inverse of WIS).
 
 quant <- TRUE
 
@@ -59,6 +63,8 @@ weights <- lapply(X = wis_cm, FUN = compute_weights)
 
 ###########################################################################
 
+# Compute the ensemble nowcasts based on different implemented methods ("mean", "median", "wis", "pinball"). The weights can be common to all quantiles or separately estimated ("quant = TRUE").
+
 quant <- TRUE
 
 new_data <- data.frame(location = character(), age_group = character(), forecast_date = as.Date(character()), target_end_date = as.Date(character()), target = character(), type = character(), quantile = double(), value = double(), pathogen = character(), model = character(), retrospective = logical(), stringsAsFactors = FALSE)
@@ -71,7 +77,7 @@ days <- seq(r[1] + skip_first_days, r[2], by = "1 day")
 
 ensemble <- list()
 count <- 1
-for (k in 1:length(days)) { # length(days)) { 
+for (k in 1:length(days)) { 
   
   dt <- days[k]
   
@@ -110,7 +116,15 @@ for (k in 1:length(days)) { # length(days)) {
 
 saveRDS(object = list(ensemble = ensemble, new_data = new_data), file = paste("TMP/FITTED_OBJECTS/ensemble_", method, "_quant_", quant, ".RDS", sep = ""))
 
+if (FALSE) {
+  w_hat <- weights_tibble(ensemble = ensemble, r = r, models = models, horizon = horizon)
+  saveRDS(object = w_hat, file = paste("TMP/FITTED_OBJECTS/W_HAT_ensemble_", method, "_quant_", quant, ".RDS", sep = ""))
+  plotting_weights(w_hat = w_hat, h = -28, q = probs[7])
+}
+
 ###########################################################################
+
+# Compute WIS for the ensemble approach based on the newly generated nowcasts.
 
 cmb_data <- rbind(data, new_data)
 
@@ -120,7 +134,7 @@ cmb_colors <- c(colors, "#009E73", "#60D1B3", "#FF0000")
 cmb_wis <- list()
 cmb_wis_cm <- list()
 
-quant <- FALSE
+quant <- TRUE
 skip_first_days <- 1
 
 for (h in horizon) {
