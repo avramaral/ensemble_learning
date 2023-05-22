@@ -36,7 +36,7 @@ if (FALSE) {
 
 ###########################################################################
 
-quant <- FALSE
+quant <- TRUE
 
 wis <- list()
 wis_cm <- list()
@@ -59,17 +59,19 @@ weights <- lapply(X = wis_cm, FUN = compute_weights)
 
 ###########################################################################
 
+quant <- TRUE
+
 new_data <- data.frame(location = character(), age_group = character(), forecast_date = as.Date(character()), target_end_date = as.Date(character()), target = character(), type = character(), quantile = double(), value = double(), pathogen = character(), model = character(), retrospective = logical(), stringsAsFactors = FALSE)
 new_data <- as_tibble(new_data)
 probs <- c(0.025, 0.100, 0.250, 0.500, 0.750, 0.900, 0.975)
-method <- "wis" # c("mean", "median", "wis", "pinball")
+method <- "pinball" # c("mean", "median", "wis", "pinball")
 
 skip_first_days <- 1
 days <- seq(r[1] + skip_first_days, r[2], by = "1 day") 
 
 ensemble <- list()
 count <- 1
-for (k in 1:length(days)) { 
+for (k in 1:length(days)) { # length(days)) { 
   
   dt <- days[k]
   
@@ -87,7 +89,7 @@ for (k in 1:length(days)) {
                                                                         y = y[[as.character(dt)]][[as.character(h)]],
                                                                         y_current = y_current[[as.character(dt)]][[as.character(h)]],
                                                                         method = method,
-                                                                        lower = 0, upper = 1)
+                                                                        lower = 0, upper = 1, quant = quant)
     
     for (q in 1:7) {
       value <- ensemble[[as.character(dt)]][[as.character(h)]]$nowcast
@@ -105,6 +107,8 @@ for (k in 1:length(days)) {
   
   count <- count + 1
 }
+
+saveRDS(object = list(ensemble = ensemble, new_data = new_data), file = paste("TMP/FITTED_OBJECTS/ensemble_", method, "_quant_", quant, ".RDS", sep = ""))
 
 ###########################################################################
 

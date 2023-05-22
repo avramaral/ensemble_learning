@@ -257,7 +257,7 @@ compute_weights <- function (wis = NULL, ...) {
 
 ##################################################################################
 
-compute_ensemble <- function (values, current, weights = NULL, y = NULL, y_current = NULL, method = c("mean", "median", "wis", "pinball"), lower = 0, upper = 1, ...) {
+compute_ensemble <- function (values, current, weights = NULL, y = NULL, y_current = NULL, method = c("mean", "median", "wis", "pinball"), lower = 0, upper = 1, quant = FALSE, ...) {
   m <- method[1]
   
   if (m == "mean") {
@@ -267,7 +267,7 @@ compute_ensemble <- function (values, current, weights = NULL, y = NULL, y_curre
   } else if (m == "wis") {
     res <- ensemble_wis(values = current[[1]], weights = weights)
   } else if (m == "pinball") {
-    res <- ensemble_pinball(values = values, current = current[[1]], y = y, y_current = y_current, lower = lower, upper = upper)
+    res <- ensemble_pinball(values = values, current = current[[1]], y = y, y_current = y_current, lower = lower, upper = upper, quant = quant)
   } else {
     stop("Choose a valid method.")
   }
@@ -309,18 +309,23 @@ ensemble_wis <- function (values, weights, mean = TRUE, ...) {
 ##################################################################################
 
 par_weights <- function (theta, wis, ...) {
-  (exp(- theta * wis)) / (sum(exp(- theta * wis)))
+  wis <- mpfr(wis, 512)
+  as.numeric((exp(- theta * wis)) / (sum(exp(- theta * wis))))
 }
 
 ##################################################################################
 
-cost_function <- function (theta, probs, values, y, wis, ...) {
+cost_function <- function (theta, probs, values, y, wis, q = 1, quant = FALSE, ...) {
   N <- length(values)
   
   ens_wis <- rep(0, N)
+  w <- par_weights(theta = theta, wis = apply(X = wis, MARGIN = 2, FUN = mean)) # wis[n, ])
   for (n in 1:N) {
-    w <- par_weights(theta = theta, wis = wis[n, ])
-    ens_wis[n] <- compute_wis(probs = probs, quant = w %*% values[[n]], y = y[n])  
+    if (!quant) {
+      ens_wis[n] <- compute_wis(probs = probs, quant = w %*% values[[n]], y = y[n], average = (!quant))  
+    } else {
+      ens_wis[n] <- compute_wis(probs = probs, quant = w %*% values[[n]], y = y[n], average = (!quant))[q]  
+    }
   }
   
   sum(ens_wis, na.rm = TRUE)
@@ -328,24 +333,59 @@ cost_function <- function (theta, probs, values, y, wis, ...) {
 
 ##################################################################################
 
-ensemble_pinball <- function (values, current, y, y_current, initial_theta = 0, probs = c(0.025, 0.100, 0.250, 0.500, 0.750, 0.900, 0.975), lower = 0, upper = 1, ...) {
+ensemble_pinball <- function (values, current, y, y_current, initial_theta = 0, probs = c(0.025, 0.100, 0.250, 0.500, 0.750, 0.900, 0.975), lower = 0, upper = 1, quant = FALSE, ...) {
   N <- length(values)
   M <- nrow(values[[1]])
   
-  wis <- matrix(data = 0, nrow = N, ncol = M)
+  if (!quant) {
+    wis <- matrix(data = 0, nrow = N, ncol = M)
+  } else {
+    wis <- array(data = 0, dim = c(N, M, length(probs)))
+  }
+  
   for (n in 1:N) {
-    wis[n, ] <- apply(X = values[[n]], MARGIN = 1, FUN = compute_wis, probs = probs, y = y[n])  
+    if (!quant) {
+      wis[n,   ] <- apply(X = values[[n]], MARGIN = 1, FUN = compute_wis, probs = probs, y = y[n], average = (!quant))  
+    } else {
+      wis[n, , ] <- apply(X = values[[n]], MARGIN = 1, FUN = compute_wis, probs = probs, y = y[n], average = (!quant)) |> t()
+    }
   }
   
   if (sum(wis, na.rm = TRUE) == 0) {
     theta <- 0
   } else {
-    theta <- optimize(f = cost_function, lower = lower, upper = upper, maximum = FALSE, probs = probs, values = values, y = y, wis = wis)$minimum  
+    if (!quant) {
+      theta <- optimize(f = cost_function, lower = lower, upper = upper, maximum = FALSE, probs = probs, values = values, y = y, wis = wis)$minimum  
+    } else {
+      theta <- rep(x = 0, times = length(probs))
+      for (q in 1:length(probs)) {
+        tmp_wis <- wis[, , q]
+        if (is.null(dim(tmp_wis))) {
+          tmp_wis <- t(as.matrix(tmp_wis)) #, ))
+        }
+        theta[q] <- optimize(f = cost_function, lower = lower, upper = upper, maximum = FALSE, probs = probs, values = values, y = y, wis = tmp_wis, q = q, quant = quant)$minimum  
+      }
+    }
   }
   
-  w <- par_weights(theta = theta, wis = apply(X = wis, MARGIN = 2, FUN = mean))
+  if (!quant) {
+    w <- par_weights(theta = theta, wis = apply(X = wis, MARGIN = 2, FUN = mean))
+    result <- list(nowcast = w %*% current, weights = w, theta = theta)
+  } else {
+    w <- matrix(data = 0, nrow = length(probs), ncol = M)
+    nowcast <- rep(x = 0, values = length(probs))
+    for (q in 1:length(probs)) {
+      tmp_wis <- wis[, , q]
+      if (is.null(dim(tmp_wis))) {
+        tmp_wis <- t(as.matrix(tmp_wis)) #, ))
+      }
+      w[q, ] <- par_weights(theta = theta[q], wis = apply(X = tmp_wis, MARGIN = 2, FUN = mean))
+      nowcast[q] <- w[q, ] %*% current[, q]
+    }
+    result <- list(nowcast = nowcast, weights = w, theta = theta)
+  } 
   
-  list(nowcast = w %*% current, weights = w, theta = theta)
+  result
 }
 
 ##################################################################################
