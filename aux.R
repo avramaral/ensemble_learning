@@ -19,14 +19,14 @@ plotting_WIS <-  function (horizon, wis_cm, colors, models, quant = FALSE, ...) 
 
 ##################################################################################
 
-weights_tibble <- function (ensemble, r, models, horizon, probs = c(0.025, 0.100, 0.250, 0.500, 0.750, 0.900, 0.975), skip_first_days = 1, ...) {
+weights_tibble <- function (ensemble, r, models, horizon, probs = c(0.025, 0.100, 0.250, 0.500, 0.750, 0.900, 0.975), skip_first_days = 1, skip_last_days = 0, ...) {
   skip_first_days <- skip_first_days
-  days <- seq(r[1] + skip_first_days, r[2], by = "1 day")
+  days <- seq(r[1] + skip_first_days, r[2] - skip_last_days, by = "1 day")
   w_hat <- data.frame(forecast_date = as.Date(character()), horizon = character(), model = character(), quant = double(), value = double(), stringsAsFactors = FALSE)
   w_hat <- as_tibble(w_hat)
   
+  b <- txtProgressBar(min = 1, max = length(days), initial = 1) 
   for (k in 1:length(days)) { 
-    print(k)
     dt <- days[k]
     for (i in 1:length(horizon)) {
       for (m in 1:length(models)) {
@@ -40,7 +40,10 @@ weights_tibble <- function (ensemble, r, models, horizon, probs = c(0.025, 0.100
         }
       }
     }
+    setTxtProgressBar(b, k)
   }
+  close(b)
+  
   w_hat
 }
 
@@ -65,3 +68,31 @@ plotting_weights <- function (w_hat, h = "0", q = 0.5, ...) {
     theme(text = element_text(size = 12, family = "LM Roman 10")) +
     scale_y_continuous()
 }
+
+##################################################################################
+
+plotting_wis_days <- function (wis_days, q, ...) {
+  p <- wis_days |> 
+    ggplot(aes(x = forecast_date, y = value, color = model)) +
+    geom_line(linewidth = 1) +
+    scale_color_manual("Models", values = c("Epiforecasts"   = "#B30000",
+                                            "ILM"            = "#E69F00", 
+                                            "KIT"            = "#56B4E9", 
+                                            "LMU"            = "#F0E442", 
+                                            "RIVM"           = "#80471C", 
+                                            "RKI"            = "#3C4AAD", 
+                                            "SU"             = "#CC79A7", 
+                                            "SZ"             = "#000000",
+                                            "MeanEnsemble"   = "#009E73",
+                                            "MedianEnsemble" = "#60D1B3",
+                                            "mean"           = "#009E73",
+                                            "median"         = "#60D1B3",
+                                            "wis"            = "#FF0000",
+                                            "pinball"        = "#FF0000")) +
+    labs(x = "Forecast date", y = "WIS", title = paste("Averaged over horizons (", q, ")", sep = "")) +
+    theme(text = element_text(size = 12, family = "LM Roman 10"))
+  
+  p
+}
+
+##################################################################################

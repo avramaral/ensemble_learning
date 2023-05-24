@@ -2,6 +2,14 @@
     "path": "~/Desktop/KIT_collaboration/TMP/FITTED_OBJECTS",
     "sortOrder": [
         {
+            "columnIndex": 4,
+            "ascending": true
+        },
+        {
+            "columnIndex": 3,
+            "ascending": false
+        },
+        {
             "columnIndex": 2,
             "ascending": true
         }
