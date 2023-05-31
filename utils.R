@@ -227,10 +227,10 @@ compute_wis_data <- function (data, truth_data, start_date, end_date, horizon, m
       
       for (m in 1:length(models)) {
         if (!quant) {
-          wis[k, m  ] <- compute_wis(probs = sliced_data[sliced_data$model == models[m], ]$quantile, quant = sliced_data[sliced_data$model == models[m], ]$value, y = sliced_y, average = (!quant))
+            wis[k, m  ] <- compute_wis(probs = sliced_data[((sliced_data$model == models[m]) & (sliced_data$quantile %in% probs)), ]$quantile, quant = sliced_data[((sliced_data$model == models[m]) & (sliced_data$quantile %in% probs)), ]$value, y = sliced_y, average = (!quant))
         } else {
-          wis[k, m, ] <- compute_wis(probs = sliced_data[sliced_data$model == models[m], ]$quantile, quant = sliced_data[sliced_data$model == models[m], ]$value, y = sliced_y, average = (!quant))
-          
+          # wis[k, m, ] <- compute_wis(probs = sliced_data[((sliced_data$model == models[m]) & (sliced_data$quantile %in% probs)), ]$quantile[1:7], quant = sliced_data[sliced_data$model == models[m], ]$value[1:7], y = sliced_y, average = (!quant))
+            wis[k, m, ] <- compute_wis(probs = sliced_data[((sliced_data$model == models[m]) & (sliced_data$quantile %in% probs)), ]$quantile, quant = sliced_data[((sliced_data$model == models[m]) & (sliced_data$quantile %in% probs)), ]$value, y = sliced_y, average = (!quant))
         }
       }
       setTxtProgressBar(b, k)
@@ -244,17 +244,18 @@ compute_wis_data <- function (data, truth_data, start_date, end_date, horizon, m
 
 compute_wis_days <- function (wis, models, q = 0, total_days = 90, skip_first_days = 1, skip_last_days = 0, ...) {
   
-  days <- seq(r[1] + skip_first_days, r[2] - skip_last_days, by = "1 day") 
+  days <- seq(r[1] + skip_first_days + 1, r[2] - skip_last_days, by = "1 day") 
   
   wis_days <- data.frame(forecast_date = as.Date(character()), model = character(), value = double(), stringsAsFactors = FALSE)
   wis_days <- as_tibble(wis_days)
   
-  for (k in 1:length(days)) { 
+  for (k in 2:length(days)) { 
     
     dt <- days[k]
     
-    number_days <- as.numeric((dt - r[1] - (skip_first_days - 1)))
-    number_days <- min(number_days, total_days)
+    #number_days <- as.numeric((dt - days[1] + 1)) # as.numeric((dt - r[1])) # - (skip_first_days - 1)))
+    #number_days <- min(number_days, total_days)
+    number_days <- min((k - 1), total_days)
     
     H <- length(wis)
     
@@ -263,7 +264,8 @@ compute_wis_days <- function (wis, models, q = 0, total_days = 90, skip_first_da
       if (!q) {
         partial_wis[(((i - 1) * number_days) + 1):(i * number_days), ] <- wis[[i]][((k - number_days + 1):(k)), ]
       } else {
-        partial_wis[(((i - 1) * number_days) + 1):(i * number_days), ] <- wis[[i]][((k - number_days + 1):(k)), , q]
+        tmp_wis <- wis[[i]][, , q]
+        partial_wis[(((i - 1) * number_days) + 1):(i * number_days), ] <- tmp_wis[(max(1, (k - total_days))):(k - 1), ] # wis[[i]][((k - number_days + 1):(k)), , q]
       }
     }
     partial_wis <- apply(X = partial_wis, MARGIN = 2, FUN = mean)
@@ -293,7 +295,7 @@ compute_weights <- function (wis = NULL, ...) {
 
 ##################################################################################
 
-compute_ensemble <- function (values, current, weights = NULL, y = NULL, y_current = NULL, method = c("mean", "median", "wis", "pinball"), lower = 0, upper = 1, quant = FALSE, hh = TRUE, models = NULL, ...) {
+compute_ensemble <- function (values, current, weights = NULL, y = NULL, y_current = NULL, method = c("mean", "median", "wis", "pinball"), lower = 0, upper = 1, quant = FALSE, hh = TRUE, models = NULL, boo_wis = TRUE, two_pars = TRUE, probs = c(0.025, 0.100, 0.250, 0.500, 0.750, 0.900, 0.975), ...) {
   m <- method[1]
   
   if (m == "mean") {
@@ -304,7 +306,7 @@ compute_ensemble <- function (values, current, weights = NULL, y = NULL, y_curre
     res <- ensemble_wis(values = current[[1]], weights = weights)
   } else if (m == "pinball") {
     if (hh) { current <- current[[1]] } 
-    res <- ensemble_pinball(values = values, current = current, y = y, y_current = y_current, lower = lower, upper = upper, quant = quant, hh = hh, models = models)
+    res <- ensemble_pinball(values = values, current = current, y = y, y_current = y_current, lower = lower, upper = upper, quant = quant, hh = hh, models = models, boo_wis = boo_wis, two_pars = two_pars, probs = probs)
   } else {
     stop("Choose a valid method.")
   }
@@ -331,8 +333,8 @@ ensemble_wis <- function (values, weights, mean = TRUE, ...) {
     if (is.null(nrow(weights))) {
       res <- weights %*% values
     } else {
-      res <- rep(0, 7)
-      for (q in 1:7) {
+      res <- rep(0, length(probs))
+      for (q in 1:length(probs)) {
         res[q] <- weights[, q] %*% values[, q]
       }
     }
@@ -345,14 +347,39 @@ ensemble_wis <- function (values, weights, mean = TRUE, ...) {
 
 ##################################################################################
 
-par_weights <- function (theta, wis, ...) {
+par_weights <- function (theta, wis, boo_wis, std_wis = TRUE, ...) {
   wis <- mpfr(wis, 512)
-  as.numeric((exp(- theta * wis)) / (sum(exp(- theta * wis))))
+  if (std_wis) { wis <- wis / sum(wis) } 
+  if (boo_wis) {
+    result <- as.numeric((exp(- theta * wis)) / (sum(exp(- theta * wis))))
+  } else {
+    result <- as.numeric(exp(c(0, theta)) / (sum(exp(c(0, theta)))))
+  }
+  result
+}
+
+par_weights_scale <- function (theta, phi, wis, boo_wis, std_wis = TRUE, ...) {
+  
+  wis <- mpfr(wis, 512)
+  if (std_wis) { wis <- wis / sum(wis) } 
+  if (boo_wis) {
+    result <- as.numeric(phi * (exp(- theta * wis)) / (sum(exp(- theta * wis))))
+  } else {
+    result <- as.numeric(phi * exp(c(0, theta)) / (sum(exp(c(0, theta)))))
+  }
+  result
 }
 
 ##################################################################################
 
-cost_function <- function (theta, probs, values, y, wis, q = 1, quant = FALSE, hh = TRUE, ...) {
+cost_function <- function (pars, probs, values, y, wis, q = 1, quant = FALSE, hh = TRUE, boo_wis = TRUE, two_pars = TRUE, ...) {
+  if (two_pars) {
+    theta <- pars[1]
+    phi   <- pars[2]
+  } else {
+    theta <- pars
+  }
+  
   if (hh) {
     N <- length(values)
     ens_wis <- rep(0, N)
@@ -363,7 +390,11 @@ cost_function <- function (theta, probs, values, y, wis, q = 1, quant = FALSE, h
     ens_wis <- rep(0, (N * H))
   }
   
-  w <- par_weights(theta = theta, wis = apply(X = wis, MARGIN = 2, FUN = mean))
+  if (two_pars) {
+    w <- par_weights_scale(theta = theta, phi = phi, wis = apply(X = wis, MARGIN = 2, FUN = mean), boo_wis = boo_wis)
+  } else {
+    w <- par_weights(theta = theta, wis = apply(X = wis, MARGIN = 2, FUN = mean), boo_wis = boo_wis)
+  }
   
   count_H <- 1
   count_N <- 1
@@ -391,7 +422,7 @@ cost_function <- function (theta, probs, values, y, wis, q = 1, quant = FALSE, h
 
 ##################################################################################
 
-ensemble_pinball <- function (values, current, y, y_current, initial_theta = 0, probs = c(0.025, 0.100, 0.250, 0.500, 0.750, 0.900, 0.975), lower = 0, upper = 1, quant = FALSE, hh = TRUE, models = NULL, name_values = TRUE, ...) {
+ensemble_pinball <- function (values, current, y, y_current, initial_theta = 0, lower = 0, upper = 1, quant = FALSE, hh = TRUE, models = NULL, boo_wis = TRUE, name_values = TRUE, two_pars = TRUE, probs = c(0.025, 0.100, 0.250, 0.500, 0.750, 0.900, 0.975), ...) {
   if (!hh & !quant) { stop("This combination of 'quant' and 'hh' is not implemented yet.") }
   
   if (hh) {
@@ -437,21 +468,30 @@ ensemble_pinball <- function (values, current, y, y_current, initial_theta = 0, 
     theta <- 0
   } else {
     if (!quant) {
-      theta <- optimize(f = cost_function, lower = lower, upper = upper, maximum = FALSE, probs = probs, values = values, y = y, wis = wis)$minimum  
+      theta <- optimize(f = cost_function, lower = lower, upper = upper, maximum = FALSE, probs = probs, values = values, y = y, wis = wis, boo_wis = boo_wis)$minimum  
     } else {
       theta <- rep(x = 0, times = length(probs))
+      if (two_pars) {
+        phi <- rep(x = 0, times = length(probs))
+      }
       for (q in 1:length(probs)) {
         tmp_wis <- wis[, , q]
         if (is.null(dim(tmp_wis))) {
           tmp_wis <- t(as.matrix(tmp_wis)) 
         }
-        theta[q] <- optimize(f = cost_function, lower = lower, upper = upper, maximum = FALSE, probs = probs, values = values, y = y, wis = tmp_wis, q = q, quant = quant, hh = hh)$minimum  
+        if (two_pars) {
+          est_pars <- optim(par = c(0, 1), fn = cost_function, method = c("L-BFGS-B"), lower = c(lower, 0), upper = c(upper, Inf), probs = probs, values = values, y = y, wis = tmp_wis, q = q, quant = quant, hh = hh, boo_wis = boo_wis, two_pars = two_pars)$par 
+          theta[q] <- est_pars[1]
+          phi[q]   <- est_pars[2]
+        } else {
+          theta[q] <- optimize(f = cost_function, lower = lower, upper = upper, maximum = FALSE, probs = probs, values = values, y = y, wis = tmp_wis, q = q, quant = quant, hh = hh, boo_wis = boo_wis, two_pars = two_pars)$minimum  
+        } 
       }
     }
   }
   
   if (!quant) {
-    w <- par_weights(theta = theta, wis = apply(X = wis, MARGIN = 2, FUN = mean))
+    w <- par_weights(theta = theta, wis = apply(X = wis, MARGIN = 2, FUN = mean), boo_wis = boo_wis)
     result <- list(nowcast = w %*% current, weights = w, theta = theta)
   } else {
     w <- matrix(data = 0, nrow = length(probs), ncol = M)
@@ -461,12 +501,18 @@ ensemble_pinball <- function (values, current, y, y_current, initial_theta = 0, 
       nowcast <- matrix(data = 0, nrow = H, ncol = length(probs))
       rownames(nowcast) <- horizon
     }
+    tmp_wis_list <- list()
     for (q in 1:length(probs)) {
       tmp_wis <- wis[, , q]
       if (is.null(dim(tmp_wis))) {
         tmp_wis <- t(as.matrix(tmp_wis)) 
       }
-      w[q, ] <- par_weights(theta = theta[q], wis = apply(X = tmp_wis, MARGIN = 2, FUN = mean))
+      tmp_wis_list[[q]] <- apply(X = tmp_wis, MARGIN = 2, FUN = mean)
+      if (two_pars) {
+        w[q, ] <- par_weights_scale(theta = theta[q], phi = phi[q], wis = apply(X = tmp_wis, MARGIN = 2, FUN = mean), boo_wis = boo_wis)
+      } else {
+        w[q, ] <- par_weights(theta = theta[q], wis = apply(X = tmp_wis, MARGIN = 2, FUN = mean), boo_wis = boo_wis)
+      }
       if (hh) {
         nowcast[q] <- w[q, ] %*% current[, q]
       } else {
@@ -481,7 +527,11 @@ ensemble_pinball <- function (values, current, y, y_current, initial_theta = 0, 
       if (is.vector(theta)) { names(theta) <- probs }
     }
     
-    result <- list(nowcast = nowcast, weights = w, theta = theta)
+    if (two_pars) {
+      result <- list(nowcast = nowcast, weights = w, theta = theta, phi = phi) # wis = tmp_wis_list)
+    } else {
+      result <- list(nowcast = nowcast, weights = w, theta = theta)
+    }
   }
   
   result

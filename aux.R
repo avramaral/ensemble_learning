@@ -55,7 +55,7 @@ plotting_weights <- function (w_hat, h = "0", q = 0.5, ...) {
   
   data %>% 
     ggplot(aes(fill = as.factor(model), x = forecast_date)) +
-    geom_bar(aes(y = value), position = "fill", stat = "identity") +
+    geom_bar(aes(y = value), position = "stack", stat = "identity") + # c(fill, stack)
     scale_fill_manual("Models", values = c("Epiforecasts" = "#B30000",
                                            "ILM"          = "#E69F00", 
                                            "KIT"          = "#56B4E9", 
