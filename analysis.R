@@ -60,7 +60,9 @@ horizon <- c(0) ##################
 ensemble <- list()
 count <- 1
 
-# clusterExport(cl, c("compute_wis", "par_weights_scale"), envir = environment())
+cl <- makeCluster(round(detectCores() * 0.9, 0))
+registerDoParallel(cl = cl)
+clusterExport(cl, c("cost_function_weights_ind", "compute_wis"), envir = environment())
 
 for (k in 1:length(days)) { #length(days)) { 
   dt <- days[k]
@@ -78,13 +80,14 @@ for (k in 1:length(days)) { #length(days)) {
                                                                         y = y[[as.character(dt)]][[as.character(h)]],
                                                                         y_current = y_current[[as.character(dt)]][[as.character(h)]],
                                                                         method = method,
-                                                                        lower = -2, 
-                                                                        upper = 2, 
+                                                                        lower = -10, 
+                                                                        upper = 10, 
                                                                         quant = quant, # Estimate quantities for the quantiles independently
                                                                         models = models, 
-                                                                        boo_wis = FALSE, # TRUE, # Consider WIS in the cost function
+                                                                        boo_wis = TRUE, # TRUE, # Consider WIS in the cost function
                                                                         probs = probs,
-                                                                        two_pars = TRUE)
+                                                                        two_pars = TRUE,
+                                                                        theta_weights = FALSE)
     
     # Input the new data to the "new_data" tibble
     for (q in 1:length(probs)) {
@@ -98,9 +101,9 @@ for (k in 1:length(days)) { #length(days)) {
   count <- count + 1
 }
 
-# saveRDS(object = list(ensemble = ensemble, new_data = new_data), file = paste("TMP/FITTED_OBJECTS/ensemble_pinball_two_models_phi_no_wis.RDS", sep = ""))
+stopCluster(cl)
 
-# stopCluster(cl) 
+# saveRDS(object = list(ensemble = ensemble, new_data = new_data), file = paste("TMP/FITTED_OBJECTS/ensemble_pinball_two_models_phi_no_wis.RDS", sep = ""))
 
 # In case you want to load the results for the above fitted procedure for all days
 if (FALSE) {
@@ -152,7 +155,7 @@ plotting_WIS(horizon = horizon, wis_cm = cmb_wis_cm, colors = cmb_colors, models
 if (quant) {
   wis_days <- list()
   for (q in 1:length(probs)) {
-    wis_days[[q]] <- compute_wis_days(wis = cmb_wis, models = cmb_models, q = q, skip_first_days = skip_days[1], skip_last_days = skip_days[2], total_days = ifelse(skip_40, 50, 90))
+    wis_days[[q]] <- compute_wis_days(wis = cmb_wis, models = cmb_models, q = q, skip_first_days = skip_days[1], skip_last_days = skip_days[2], total_days = ifelse(skip_40, 50, 90), average = FALSE)
     tmp_plot <- plotting_wis_days(wis_days = wis_days[[q]], q = probs[q])
     print(tmp_plot)
   }

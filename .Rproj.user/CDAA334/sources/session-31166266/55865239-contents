@@ -242,30 +242,42 @@ compute_wis_data <- function (data, truth_data, start_date, end_date, horizon, m
 
 ##################################################################################
 
-compute_wis_days <- function (wis, models, q = 0, total_days = 90, skip_first_days = 1, skip_last_days = 0, ...) {
+compute_wis_days <- function (wis, models, q = 0, total_days = 90, skip_first_days = 1, skip_last_days = 0, average = TRUE, ...) {
   
-  days <- seq(r[1] + skip_first_days + 1, r[2] - skip_last_days, by = "1 day") 
+  days <- seq(r[1] + skip_first_days, r[2] - skip_last_days, by = "1 day") 
   
   wis_days <- data.frame(forecast_date = as.Date(character()), model = character(), value = double(), stringsAsFactors = FALSE)
   wis_days <- as_tibble(wis_days)
+  
+  H <- length(wis)
   
   for (k in 2:length(days)) { 
     
     dt <- days[k]
     
-    #number_days <- as.numeric((dt - days[1] + 1)) # as.numeric((dt - r[1])) # - (skip_first_days - 1)))
-    #number_days <- min(number_days, total_days)
-    number_days <- min((k - 1), total_days)
-    
-    H <- length(wis)
-    
-    partial_wis <- matrix(data = 0, nrow = (H * number_days), ncol = ncol(wis[[1]]))
-    for (i in 1:H) {
-      if (!q) {
-        partial_wis[(((i - 1) * number_days) + 1):(i * number_days), ] <- wis[[i]][((k - number_days + 1):(k)), ]
-      } else {
-        tmp_wis <- wis[[i]][, , q]
-        partial_wis[(((i - 1) * number_days) + 1):(i * number_days), ] <- tmp_wis[(max(1, (k - total_days))):(k - 1), ] # wis[[i]][((k - number_days + 1):(k)), , q]
+    if (average) {
+      
+      number_days <- min((k - 1), total_days)
+      partial_wis <- matrix(data = 0, nrow = (H * number_days), ncol = ncol(wis[[1]]))
+      
+      for (i in 1:H) {
+        if (!q) {
+          partial_wis[(((i - 1) * number_days) + 1):(i * number_days), ] <- wis[[i]][((k - number_days + 1):(k)), ]
+        } else {
+          tmp_wis <- wis[[i]][, , q]
+          partial_wis[(((i - 1) * number_days) + 1):(i * number_days), ] <- tmp_wis[(max(1, (k - total_days))):(k - 1), ] # wis[[i]][((k - number_days + 1):(k)), , q]
+        }
+      }
+    } else {
+      
+      partial_wis <- matrix(data = 0, nrow = H, ncol = ncol(wis[[1]]))
+      for (i in 1:H) {
+        if (!q) {
+          stop("To be implemented.")
+        } else {
+          tmp_wis <- wis[[i]][, , q]
+          partial_wis[i, ] <- tmp_wis[k, ]
+        }
       }
     }
     partial_wis <- apply(X = partial_wis, MARGIN = 2, FUN = mean)
@@ -273,9 +285,24 @@ compute_wis_days <- function (wis, models, q = 0, total_days = 90, skip_first_da
     for (p in 1:length(partial_wis)) {
       wis_days <- wis_days |> add_row(forecast_date = dt, model = models[p], value = partial_wis[p])
     }
-    
   }
   wis_days
+}
+
+##################################################################################
+
+grid_optim <- function (probs, values, y, q, quant, M, by = 0.01) {
+  w <- list()
+  for (m in 1:M) { w[[m]] <- seq(0, 1, by = by) }
+  pts <- expand.grid(w)
+  
+  rsp <- foreach(i = 1:nrow(pts)) %dopar% { cost_function_weights_ind(w = unlist(c(pts[i, ])), probs = probs, values = values, y = y, q = q, quant = quant, exponentiate = FALSE) }
+  
+  pts <- cbind(pts, unlist(rsp))
+  colnames(pts) <- c(paste("w_", 1:M, sep = ""), "cost")
+  pos <- which.min(pts$cost)
+  
+  unlist(c(pts[pos, 1:M]))
 }
 
 ##################################################################################
@@ -295,7 +322,7 @@ compute_weights <- function (wis = NULL, ...) {
 
 ##################################################################################
 
-compute_ensemble <- function (values, current, weights = NULL, y = NULL, y_current = NULL, method = c("mean", "median", "wis", "pinball"), lower = 0, upper = 1, quant = FALSE, hh = TRUE, models = NULL, boo_wis = TRUE, two_pars = TRUE, probs = c(0.025, 0.100, 0.250, 0.500, 0.750, 0.900, 0.975), ...) {
+compute_ensemble <- function (values, current, weights = NULL, y = NULL, y_current = NULL, method = c("mean", "median", "wis", "pinball"), lower = 0, upper = 1, quant = FALSE, hh = TRUE, models = NULL, boo_wis = TRUE, two_pars = TRUE, theta_weights = TRUE, probs = c(0.025, 0.100, 0.250, 0.500, 0.750, 0.900, 0.975), ...) {
   m <- method[1]
   
   if (m == "mean") {
@@ -306,7 +333,7 @@ compute_ensemble <- function (values, current, weights = NULL, y = NULL, y_curre
     res <- ensemble_wis(values = current[[1]], weights = weights)
   } else if (m == "pinball") {
     if (hh) { current <- current[[1]] } 
-    res <- ensemble_pinball(values = values, current = current, y = y, y_current = y_current, lower = lower, upper = upper, quant = quant, hh = hh, models = models, boo_wis = boo_wis, two_pars = two_pars, probs = probs)
+    res <- ensemble_pinball(values = values, current = current, y = y, y_current = y_current, lower = lower, upper = upper, quant = quant, hh = hh, models = models, boo_wis = boo_wis, two_pars = two_pars, theta_weights = theta_weights, probs = probs)
   } else {
     stop("Choose a valid method.")
   }
@@ -417,12 +444,26 @@ cost_function <- function (pars, probs, values, y, wis, q = 1, quant = FALSE, hh
     }
   }
   
-  sum(ens_wis, na.rm = TRUE)
+  mean(ens_wis, na.rm = TRUE) # sum(ens_wis, na.rm = TRUE)
+}
+
+
+cost_function_weights_ind <- function (w, probs, values, y, q = 1, quant = FALSE, exponentiate = TRUE, ...) {
+  if (exponentiate) { w <- exp(w) }
+  
+  N <- length(values)
+  ens_wis <- rep(0, N)
+  
+  for (n in 1:length(ens_wis)) {
+    ens_wis[n] <- compute_wis(probs = probs, quant = w %*% values[[n]], y = y[n], average = (!quant))[q]
+  }
+  
+  mean(ens_wis, na.rm = TRUE) # sum(ens_wis, na.rm = TRUE) 
 }
 
 ##################################################################################
 
-ensemble_pinball <- function (values, current, y, y_current, initial_theta = 0, lower = 0, upper = 1, quant = FALSE, hh = TRUE, models = NULL, boo_wis = TRUE, name_values = TRUE, two_pars = TRUE, probs = c(0.025, 0.100, 0.250, 0.500, 0.750, 0.900, 0.975), ...) {
+ensemble_pinball <- function (values, current, y, y_current, initial_theta = 0, lower = 0, upper = 1, quant = FALSE, hh = TRUE, models = NULL, boo_wis = TRUE, name_values = TRUE, two_pars = TRUE, theta_weights = TRUE, probs = c(0.025, 0.100, 0.250, 0.500, 0.750, 0.900, 0.975), ...) {
   if (!hh & !quant) { stop("This combination of 'quant' and 'hh' is not implemented yet.") }
   
   if (hh) {
@@ -470,67 +511,89 @@ ensemble_pinball <- function (values, current, y, y_current, initial_theta = 0, 
     if (!quant) {
       theta <- optimize(f = cost_function, lower = lower, upper = upper, maximum = FALSE, probs = probs, values = values, y = y, wis = wis, boo_wis = boo_wis)$minimum  
     } else {
-      theta <- rep(x = 0, times = length(probs))
-      if (two_pars) {
-        phi <- rep(x = 0, times = length(probs))
+      if (theta_weights) {
+        theta <- rep(x = 0, times = length(probs))
+        if (two_pars) {
+          phi <- rep(x = 0, times = length(probs))
+        }
+        for (q in 1:length(probs)) {
+          tmp_wis <- wis[, , q]
+          if (is.null(dim(tmp_wis))) {
+            tmp_wis <- t(as.matrix(tmp_wis)) 
+          }
+          if (two_pars) {
+            est_pars <- optim(par = c(0, 1), fn = cost_function, method = c("L-BFGS-B"), lower = c(lower, 0), upper = c(upper, Inf), probs = probs, values = values, y = y, wis = tmp_wis, q = q, quant = quant, hh = hh, boo_wis = boo_wis, two_pars = two_pars)$par 
+            theta[q] <- est_pars[1]
+            phi[q]   <- est_pars[2]
+          } else {
+            theta[q] <- optimize(f = cost_function, lower = lower, upper = upper, maximum = FALSE, probs = probs, values = values, y = y, wis = tmp_wis, q = q, quant = quant, hh = hh, boo_wis = boo_wis, two_pars = two_pars)$minimum  
+          } 
+        }
+      } else { # Estimate the weights independently
+        if (!quant) {
+          # To be implemented
+        } else {
+          w <- matrix(data = 0, nrow = length(probs), ncol = M)
+          nowcast <- rep(x = 0, times = length(probs))
+          for (q in 1:length(probs)) {
+            # w[q, ] <- optim(par = rep(log(1 / M), M), fn = cost_function_weights_ind, method = c("BFGS"), probs = probs, values = values, y = y, q = q, quant = quant)$par 
+            # w[q, ] <- exp(w[q, ])
+            
+            # w[q, ] <- optim(par = rep((1 / M), M), fn = cost_function_weights_ind, method = c("L-BFGS-B"), lower = rep(0, M), upper = rep(1, M), probs = probs, values = values, y = y, q = q, quant = quant, exponentiate = FALSE)$par 
+            
+            w[q, ] <- grid_optim(probs = probs, values = values, y = y, q = q, quant = quant, M = M)
+            
+            nowcast[q] <- w[q, ] %*% current[, q]
+          }
+        }
+        result <- list(nowcast = nowcast, weights = w)
       }
+    }
+  }
+  
+  if (theta_weights) {
+    if (!quant) {
+      w <- par_weights(theta = theta, wis = apply(X = wis, MARGIN = 2, FUN = mean), boo_wis = boo_wis)
+      result <- list(nowcast = w %*% current, weights = w, theta = theta)
+    } else {
+      w <- matrix(data = 0, nrow = length(probs), ncol = M)
+      if (hh) {
+        nowcast <- rep(x = 0, times = length(probs))
+      } else {
+        nowcast <- matrix(data = 0, nrow = H, ncol = length(probs))
+        rownames(nowcast) <- horizon
+      }
+      tmp_wis_list <- list()
       for (q in 1:length(probs)) {
         tmp_wis <- wis[, , q]
         if (is.null(dim(tmp_wis))) {
           tmp_wis <- t(as.matrix(tmp_wis)) 
         }
+        tmp_wis_list[[q]] <- apply(X = tmp_wis, MARGIN = 2, FUN = mean)
         if (two_pars) {
-          est_pars <- optim(par = c(0, 1), fn = cost_function, method = c("L-BFGS-B"), lower = c(lower, 0), upper = c(upper, Inf), probs = probs, values = values, y = y, wis = tmp_wis, q = q, quant = quant, hh = hh, boo_wis = boo_wis, two_pars = two_pars)$par 
-          theta[q] <- est_pars[1]
-          phi[q]   <- est_pars[2]
+          w[q, ] <- par_weights_scale(theta = theta[q], phi = phi[q], wis = apply(X = tmp_wis, MARGIN = 2, FUN = mean), boo_wis = boo_wis)
         } else {
-          theta[q] <- optimize(f = cost_function, lower = lower, upper = upper, maximum = FALSE, probs = probs, values = values, y = y, wis = tmp_wis, q = q, quant = quant, hh = hh, boo_wis = boo_wis, two_pars = two_pars)$minimum  
-        } 
-      }
-    }
-  }
-  
-  if (!quant) {
-    w <- par_weights(theta = theta, wis = apply(X = wis, MARGIN = 2, FUN = mean), boo_wis = boo_wis)
-    result <- list(nowcast = w %*% current, weights = w, theta = theta)
-  } else {
-    w <- matrix(data = 0, nrow = length(probs), ncol = M)
-    if (hh) {
-      nowcast <- rep(x = 0, values = length(probs))
-    } else {
-      nowcast <- matrix(data = 0, nrow = H, ncol = length(probs))
-      rownames(nowcast) <- horizon
-    }
-    tmp_wis_list <- list()
-    for (q in 1:length(probs)) {
-      tmp_wis <- wis[, , q]
-      if (is.null(dim(tmp_wis))) {
-        tmp_wis <- t(as.matrix(tmp_wis)) 
-      }
-      tmp_wis_list[[q]] <- apply(X = tmp_wis, MARGIN = 2, FUN = mean)
-      if (two_pars) {
-        w[q, ] <- par_weights_scale(theta = theta[q], phi = phi[q], wis = apply(X = tmp_wis, MARGIN = 2, FUN = mean), boo_wis = boo_wis)
-      } else {
-        w[q, ] <- par_weights(theta = theta[q], wis = apply(X = tmp_wis, MARGIN = 2, FUN = mean), boo_wis = boo_wis)
-      }
-      if (hh) {
-        nowcast[q] <- w[q, ] %*% current[, q]
-      } else {
-        for (h in 1:H) {
-          nowcast[as.character(horizon[h]), q] <- w[q, ] %*% current[[as.character(horizon[h])]][[1]][, q]
+          w[q, ] <- par_weights(theta = theta[q], wis = apply(X = tmp_wis, MARGIN = 2, FUN = mean), boo_wis = boo_wis)
+        }
+        if (hh) {
+          nowcast[q] <- w[q, ] %*% current[, q]
+        } else {
+          for (h in 1:H) {
+            nowcast[as.character(horizon[h]), q] <- w[q, ] %*% current[[as.character(horizon[h])]][[1]][, q]
+          }
         }
       }
-    }
-    if (name_values) {
-      if (is.matrix(w)) { rownames(w) <- probs; colnames(w) <- models }
-      if (is.vector(nowcast)) { names(nowcast) <- probs }
-      if (is.vector(theta)) { names(theta) <- probs }
-    }
-    
-    if (two_pars) {
-      result <- list(nowcast = nowcast, weights = w, theta = theta, phi = phi) # wis = tmp_wis_list)
-    } else {
-      result <- list(nowcast = nowcast, weights = w, theta = theta)
+      if (name_values) {
+        if (is.matrix(w)) { rownames(w) <- probs; colnames(w) <- models }
+        if (is.vector(nowcast)) { names(nowcast) <- probs }
+        if (is.vector(theta)) { names(theta) <- probs }
+      }
+      
+      if (two_pars) {
+        result <- list(nowcast = nowcast, weights = w, theta = theta, phi = phi) # wis = tmp_wis_list)
+      } else {
+        result <- list(nowcast = nowcast, weights = w, theta = theta)
+      }
     }
   }
   
