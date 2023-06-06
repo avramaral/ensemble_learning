@@ -53,23 +53,23 @@ method <- "pinball" # c("mean", "median", "wis", "pinball")
 quant <- TRUE # Weights estimated independently for quantile
 
 # c(122, 0)
-skip_days <- c(1, 0) # Number of skipped days in the beginning and the end of the total time range, respectively
+skip_days <- c(32, 0) # Number of skipped days in the beginning and the end of the total time range, respectively
 days <- seq(r[1] + skip_days[1], r[2] - skip_days[2], by = "1 day") 
 
-horizon <- c(0) ##################
+# horizon <- c(0) ##################
 ensemble <- list()
 count <- 1
 
 cl <- makeCluster(round(detectCores() * 0.9, 0))
 registerDoParallel(cl = cl)
-clusterExport(cl, c("cost_function_weights_ind", "compute_wis"), envir = environment())
+clusterExport(cl, c("cost_function", "par_weights_scale", "cost_function_weights_ind", "compute_wis", "mpfr"), envir = environment())
 
 for (k in 1:length(days)) { #length(days)) { 
   dt <- days[k]
   ensemble[[as.character(dt)]] <- list()
   
   print(paste(dt, " (", sprintf("%03d", count), "/", sprintf("%03d", length(days)), ")", sep = ""))
-  # b <- txtProgressBar(min = 1, max = length(horizon), initial = 1) 
+  b <- txtProgressBar(min = 1, max = length(horizon), initial = 1) 
   
   for (i in 1:length(horizon)) {
     h <- horizon[i]
@@ -80,30 +80,32 @@ for (k in 1:length(days)) { #length(days)) {
                                                                         y = y[[as.character(dt)]][[as.character(h)]],
                                                                         y_current = y_current[[as.character(dt)]][[as.character(h)]],
                                                                         method = method,
-                                                                        lower = -10, 
+                                                                        lower = -10, # -5 
                                                                         upper = 10, 
                                                                         quant = quant, # Estimate quantities for the quantiles independently
                                                                         models = models, 
                                                                         boo_wis = TRUE, # TRUE, # Consider WIS in the cost function
+                                                                        hh = TRUE,
                                                                         probs = probs,
                                                                         two_pars = TRUE,
-                                                                        theta_weights = FALSE)
+                                                                        theta_weights = TRUE,
+                                                                        by = 0.05)
     
     # Input the new data to the "new_data" tibble
     for (q in 1:length(probs)) {
       value <- ensemble[[as.character(dt)]][[as.character(h)]]$nowcast[q]
       new_data <- new_data |> add_row(location = "DE", age_group = "00+", forecast_date = dt, target_end_date = (dt + h), target = paste(h, " day ahead inc hosp", sep = ""), type = "quantile", quantile =  probs[q], value = value, pathogen = "COVID-19", model = method, retrospective = FALSE)
     }
-    # setTxtProgressBar(b, i)
+    setTxtProgressBar(b, i)
   }
-  # close(b)
+  close(b)
   
   count <- count + 1
 }
 
 stopCluster(cl)
 
-# saveRDS(object = list(ensemble = ensemble, new_data = new_data), file = paste("TMP/FITTED_OBJECTS/ensemble_pinball_two_models_phi_no_wis.RDS", sep = ""))
+saveRDS(object = list(ensemble = ensemble, new_data = new_data), file = paste("TMP/FITTED_OBJECTS/two_models_grid_theta_all_horizons.RDS", sep = ""))
 
 # In case you want to load the results for the above fitted procedure for all days
 if (FALSE) {
@@ -120,7 +122,7 @@ if (FALSE) {
 
 w_hat <- weights_tibble(ensemble = ensemble, r = r, models = models, horizon = horizon, skip_first_days = skip_days[1], skip_last_days = skip_days[2], probs = probs)
 for (q in 1:length(probs)) {
-  tmp_plot <- plotting_weights(w_hat = w_hat, h = 0, q = probs[q]) # Choose the horizon "h" and quantile "q"
+  tmp_plot <- plotting_weights(w_hat = w_hat, h = -2, q = probs[q]) # Choose the horizon "h" and quantile "q"
   print(tmp_plot)
 }
 

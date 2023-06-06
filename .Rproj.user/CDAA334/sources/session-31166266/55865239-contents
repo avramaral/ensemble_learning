@@ -291,18 +291,30 @@ compute_wis_days <- function (wis, models, q = 0, total_days = 90, skip_first_da
 
 ##################################################################################
 
-grid_optim <- function (probs, values, y, q, quant, M, by = 0.01) {
-  w <- list()
-  for (m in 1:M) { w[[m]] <- seq(0, 1, by = by) }
-  pts <- expand.grid(w)
-  
-  rsp <- foreach(i = 1:nrow(pts)) %dopar% { cost_function_weights_ind(w = unlist(c(pts[i, ])), probs = probs, values = values, y = y, q = q, quant = quant, exponentiate = FALSE) }
+grid_optim <- function (probs, values, y, q, quant, M, wis = NULL, by = 0.01, theta_lim = c(-5, 5), phi_lim = c(0.75, 1.25), hh = TRUE, boo_wis = TRUE, theta_weights = TRUE) {
+  if (theta_weights) {
+    
+    theta <- seq(theta_lim[1], theta_lim[2], length.out = ((1 * 1 / by) + 1))
+    phi <- seq(phi_lim[1], phi_lim[2], by = by)
+    
+    pts <- expand.grid(theta, phi)
+    
+    rsp <- foreach(i = 1:nrow(pts)) %dopar% { cost_function(pars = unlist(c(pts[i, ])), probs = probs, values = values, y = y, wis = wis, q = q, quant = quant, hh = hh, boo_wis = boo_wis, two_pars = theta_weights) } # UPDATE LAST PARAMETER
+  } else {
+    w <- list()
+    for (m in 1:M) { w[[m]] <- seq(0, 1, by = by) }
+    pts <- expand.grid(w)
+    
+    rsp <- foreach(i = 1:nrow(pts)) %dopar% { cost_function_weights_ind(w = unlist(c(pts[i, ])), probs = probs, values = values, y = y, q = q, quant = quant, exponentiate = FALSE) }
+  }
   
   pts <- cbind(pts, unlist(rsp))
-  colnames(pts) <- c(paste("w_", 1:M, sep = ""), "cost")
+  if (theta_weights) { colnames(pts) <- c("theta", "phi", "cost") } else { colnames(pts) <- c(paste("w_", 1:M, sep = ""), "cost") }
   pos <- which.min(pts$cost)
   
-  unlist(c(pts[pos, 1:M]))
+  if (theta_weights) { result <- unlist(c(pts[pos, 1:3])) } else { result <- unlist(c(pts[pos, 1:M])) }
+  
+ result
 }
 
 ##################################################################################
@@ -322,7 +334,7 @@ compute_weights <- function (wis = NULL, ...) {
 
 ##################################################################################
 
-compute_ensemble <- function (values, current, weights = NULL, y = NULL, y_current = NULL, method = c("mean", "median", "wis", "pinball"), lower = 0, upper = 1, quant = FALSE, hh = TRUE, models = NULL, boo_wis = TRUE, two_pars = TRUE, theta_weights = TRUE, probs = c(0.025, 0.100, 0.250, 0.500, 0.750, 0.900, 0.975), ...) {
+compute_ensemble <- function (values, current, weights = NULL, y = NULL, y_current = NULL, method = c("mean", "median", "wis", "pinball"), lower = 0, upper = 1, by = 0.01, quant = FALSE, hh = TRUE, models = NULL, boo_wis = TRUE, two_pars = TRUE, theta_weights = TRUE, probs = c(0.025, 0.100, 0.250, 0.500, 0.750, 0.900, 0.975), ...) {
   m <- method[1]
   
   if (m == "mean") {
@@ -333,7 +345,7 @@ compute_ensemble <- function (values, current, weights = NULL, y = NULL, y_curre
     res <- ensemble_wis(values = current[[1]], weights = weights)
   } else if (m == "pinball") {
     if (hh) { current <- current[[1]] } 
-    res <- ensemble_pinball(values = values, current = current, y = y, y_current = y_current, lower = lower, upper = upper, quant = quant, hh = hh, models = models, boo_wis = boo_wis, two_pars = two_pars, theta_weights = theta_weights, probs = probs)
+    res <- ensemble_pinball(values = values, current = current, y = y, y_current = y_current, lower = lower, upper = upper, by = by, quant = quant, hh = hh, models = models, boo_wis = boo_wis, two_pars = two_pars, theta_weights = theta_weights, probs = probs)
   } else {
     stop("Choose a valid method.")
   }
@@ -463,7 +475,7 @@ cost_function_weights_ind <- function (w, probs, values, y, q = 1, quant = FALSE
 
 ##################################################################################
 
-ensemble_pinball <- function (values, current, y, y_current, initial_theta = 0, lower = 0, upper = 1, quant = FALSE, hh = TRUE, models = NULL, boo_wis = TRUE, name_values = TRUE, two_pars = TRUE, theta_weights = TRUE, probs = c(0.025, 0.100, 0.250, 0.500, 0.750, 0.900, 0.975), ...) {
+ensemble_pinball <- function (values, current, y, y_current, initial_theta = 0, lower = 0, upper = 1, by = 0.01, quant = FALSE, hh = TRUE, models = NULL, boo_wis = TRUE, name_values = TRUE, two_pars = TRUE, theta_weights = TRUE, probs = c(0.025, 0.100, 0.250, 0.500, 0.750, 0.900, 0.975), ...) {
   if (!hh & !quant) { stop("This combination of 'quant' and 'hh' is not implemented yet.") }
   
   if (hh) {
@@ -522,7 +534,8 @@ ensemble_pinball <- function (values, current, y, y_current, initial_theta = 0, 
             tmp_wis <- t(as.matrix(tmp_wis)) 
           }
           if (two_pars) {
-            est_pars <- optim(par = c(0, 1), fn = cost_function, method = c("L-BFGS-B"), lower = c(lower, 0), upper = c(upper, Inf), probs = probs, values = values, y = y, wis = tmp_wis, q = q, quant = quant, hh = hh, boo_wis = boo_wis, two_pars = two_pars)$par 
+            est_pars <- grid_optim(probs = probs, values = values, y = y, q = q, quant = quant, M = M, wis = tmp_wis, by = by, theta_lim = c(lower, upper), hh = hh, boo_wis = boo_wis, theta_weights = theta_weights)
+            # est_pars <- optim(par = c(0, 1), fn = cost_function, method = c("L-BFGS-B"), lower = c(lower, 0), upper = c(upper, Inf), probs = probs, values = values, y = y, wis = tmp_wis, q = q, quant = quant, hh = hh, boo_wis = boo_wis, two_pars = two_pars)$par 
             theta[q] <- est_pars[1]
             phi[q]   <- est_pars[2]
           } else {
@@ -541,7 +554,7 @@ ensemble_pinball <- function (values, current, y, y_current, initial_theta = 0, 
             
             # w[q, ] <- optim(par = rep((1 / M), M), fn = cost_function_weights_ind, method = c("L-BFGS-B"), lower = rep(0, M), upper = rep(1, M), probs = probs, values = values, y = y, q = q, quant = quant, exponentiate = FALSE)$par 
             
-            w[q, ] <- grid_optim(probs = probs, values = values, y = y, q = q, quant = quant, M = M)
+            w[q, ] <- grid_optim(probs = probs, values = values, y = y, q = q, quant = quant, M = M, theta_weights = theta_weights)
             
             nowcast[q] <- w[q, ] %*% current[, q]
           }
