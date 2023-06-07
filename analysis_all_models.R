@@ -11,35 +11,26 @@ skip_40 <- FALSE
 data <- read_csv(file = "DATA/data.csv.gz")
 truth_data <- read_csv(file = "DATA/truth_40d.csv.gz")
 
-naive_ensemble <- readRDS(file = "TMP/naive_ensemble_2m.RDS")
+naive_ensemble <- readRDS(file = "TMP/naive_ensemble.RDS")
 
 filtered_data <- filter_data(data = data, truth_data = truth_data, loc = "DE", age_gr = "00+", extra_delay = 7)
 data <- filtered_data$data
 truth_data <- filtered_data$truth_data
 
-models <- c("KIT", "LMU") 
-colors <- c("#56B4E9", "#F0E442") 
+models <- c("Epiforecasts", "ILM", "KIT", "LMU", "RIVM", "RKI", "SU", "SZ") 
+colors <- c("#B30000", "#E69F00", "#56B4E9", "#F0E442", "#80471C", "#3C4AAD", "#CC79A7", "#000000") 
 r <- range(data$forecast_date)
 
 data <- data |> filter(model %in% models)
 data <- rbind(data, naive_ensemble)
 
 horizon <- -28:0
-probs <- c(0.025, 0.500, 0.975)
-# probs <- c(0.025, 0.100, 0.250, 0.500, 0.750, 0.900, 0.975)
+probs <- c(0.025, 0.100, 0.250, 0.500, 0.750, 0.900, 0.975)
 
-# Sliced data files in the correct format for using the implemented functions
-if (!skip_40) {
-  y      <- readRDS(file = "TMP/y.RDS")
-  # values <- readRDS(file = "TMP/values_2m.RDS")
-  values <- readRDS(file = "TMP/values_2m_3probs.RDS")
-} else {
-  y      <- readRDS(file = "TMP/y_skip_40.RDS")
-  values <- readRDS(file = "TMP/values_2m_skip_40.RDS")
-}
+y         <- readRDS(file = "TMP/y.RDS")
 y_current <- readRDS(file = "TMP/y_current.RDS") 
-# current   <- readRDS(file = "TMP/current_2m.RDS")
-current   <- readRDS(file = "TMP/current_2m_3probs.RDS")
+values    <- readRDS(file = "TMP/values.RDS")
+current   <- readRDS(file = "TMP/current.RDS")
 
 ###########################################################################
 # ESTIMATE THE WEIGHTS AND COMPUTE THE NEW ENSEMBLE NOWCASTS
@@ -60,7 +51,7 @@ days <- seq(r[1] + skip_days[1], r[2] - skip_days[2], by = "1 day")
 ensemble <- list()
 count <- 1
 
-cl <- makeCluster(round(detectCores() * 0.9, 0))
+cl <- makeCluster(round(detectCores() * 0.1, 0))
 registerDoParallel(cl = cl)
 clusterExport(cl, c("cost_function", "par_weights_scale", "cost_function_weights_ind", "compute_wis", "mpfr"), envir = environment())
 
@@ -89,7 +80,7 @@ for (k in 1:length(days)) { #length(days)) {
                                                                         probs = probs,
                                                                         two_pars = TRUE,
                                                                         theta_weights = TRUE,
-                                                                        by = 0.05)
+                                                                        by = 0.01)
     
     # Input the new data to the "new_data" tibble
     for (q in 1:length(probs)) {
@@ -105,7 +96,10 @@ for (k in 1:length(days)) { #length(days)) {
 
 stopCluster(cl)
 
-saveRDS(object = list(ensemble = ensemble, new_data = new_data), file = paste("TMP/FITTED_OBJECTS/two_models_grid_theta_all_horizons.RDS", sep = ""))
+# saveRDS(object = list(ensemble = ensemble, new_data = new_data), file = paste("TMP/FITTED_OBJECTS/all_models_grid_theta_all_horizons.RDS", sep = ""))
+# fitted_object <- readRDS(file = paste("TMP/FITTED_OBJECTS/all_models_grid_theta_all_horizons.RDS", sep = ""))
+# new_data <- fitted_object$new_data
+# ensemble2 <- fitted_object$ensemble
 
 # In case you want to load the results for the above fitted procedure for all days
 if (FALSE) {
@@ -157,7 +151,7 @@ plotting_WIS(horizon = horizon, wis_cm = cmb_wis_cm, colors = cmb_colors, models
 if (quant) {
   wis_days <- list()
   for (q in 1:length(probs)) {
-    wis_days[[q]] <- compute_wis_days(wis = cmb_wis, models = cmb_models, q = q, skip_first_days = skip_days[1], skip_last_days = skip_days[2], total_days = ifelse(skip_40, 50, 90), average = TRUE)
+    wis_days[[q]] <- compute_wis_days(wis = cmb_wis, models = cmb_models, q = q, skip_first_days = skip_days[1], skip_last_days = skip_days[2], total_days = ifelse(skip_40, 50, 90), average = FALSE)
     tmp_plot <- plotting_wis_days(wis_days = wis_days[[q]], q = probs[q])
     print(tmp_plot)
   }

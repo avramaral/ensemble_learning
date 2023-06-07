@@ -294,26 +294,116 @@ compute_wis_days <- function (wis, models, q = 0, total_days = 90, skip_first_da
 grid_optim <- function (probs, values, y, q, quant, M, wis = NULL, by = 0.01, theta_lim = c(-5, 5), phi_lim = c(0.75, 1.25), hh = TRUE, boo_wis = TRUE, theta_weights = TRUE) {
   if (theta_weights) {
     
-    theta <- seq(theta_lim[1], theta_lim[2], length.out = ((1 * 1 / by) + 1))
+    theta <- seq(theta_lim[1], theta_lim[2], length.out = ((2 * 1 / by) + 1))
     phi <- seq(phi_lim[1], phi_lim[2], by = by)
     
     pts <- expand.grid(theta, phi)
     
-    rsp <- foreach(i = 1:nrow(pts)) %dopar% { cost_function(pars = unlist(c(pts[i, ])), probs = probs, values = values, y = y, wis = wis, q = q, quant = quant, hh = hh, boo_wis = boo_wis, two_pars = theta_weights) } # UPDATE LAST PARAMETER
+    ##################################################
+    ##################################################
+    
+    phi_1 <- which(phi == 1)
+
+    count  <- 1
+    before <- FALSE
+    after  <- FALSE
+    for (i in 1:((length(phi) - 1) / 2)) {
+
+      if (count == 1) {
+        # phi = 1
+        tmp_pts_1 <- pts[pts[, 2] == phi[phi_1], ]
+        tmp_rsp_1 <- foreach(i = 1:nrow(tmp_pts_1)) %dopar% { cost_function(pars = unlist(c(tmp_pts_1[i, ])), probs = probs, values = values, y = y, wis = wis, q = q, quant = quant, hh = hh, boo_wis = boo_wis, two_pars = theta_weights) }
+        tmp_min_1 <- min(unlist(tmp_rsp_1))
+        tmp_par_1 <- c(unlist(c(tmp_pts_1[which.min(unlist(tmp_rsp_1)), 1:2])), tmp_min_1)
+        names(tmp_par_1) <- c("theta", "phi", "cost")
+
+        # before phi = 1
+        tmp_pts_b <- pts[pts[, 2] == phi[phi_1 - i], ]
+        tmp_rsp_b <- foreach(i = 1:nrow(tmp_pts_b)) %dopar% { cost_function(pars = unlist(c(tmp_pts_b[i, ])), probs = probs, values = values, y = y, wis = wis, q = q, quant = quant, hh = hh, boo_wis = boo_wis, two_pars = theta_weights) }
+        tmp_min_b <- min(unlist(tmp_rsp_b))
+        tmp_par_b <- c(unlist(c(tmp_pts_b[which.min(unlist(tmp_rsp_b)), 1:2])), tmp_min_b)
+        names(tmp_par_b) <- c("theta", "phi", "cost")
+
+        # after  phi = 1
+        tmp_pts_a <- pts[pts[, 2] == phi[phi_1 + i], ]
+        tmp_rsp_a <- foreach(i = 1:nrow(tmp_pts_a)) %dopar% { cost_function(pars = unlist(c(tmp_pts_a[i, ])), probs = probs, values = values, y = y, wis = wis, q = q, quant = quant, hh = hh, boo_wis = boo_wis, two_pars = theta_weights) }
+        tmp_min_a <- min(unlist(tmp_rsp_a))
+        tmp_par_a <- c(unlist(c(tmp_pts_a[which.min(unlist(tmp_rsp_a)), 1:2])), tmp_min_a)
+        names(tmp_par_a) <- c("theta", "phi", "cost")
+
+               if (tmp_min_1 <= min(tmp_min_b, tmp_min_a)) { before <- FALSE; after <- FALSE; tmp_par <- tmp_par_1 
+        } else if (tmp_min_b <= min(tmp_min_1, tmp_min_a)) { before <- TRUE;  after <- FALSE; tmp_par <- tmp_par_b 
+        } else if (tmp_min_a <= min(tmp_min_1, tmp_min_b)) { before <- FALSE; after <- TRUE;  tmp_par <- tmp_par_a } else { stop("Error 'min'") }
+
+      } else if ((before == TRUE ) & (after == FALSE)) {
+      
+        tmp_pts_b <- pts[pts[, 2] == phi[phi_1 - i], ]
+        tmp_rsp_b <- foreach(i = 1:nrow(tmp_pts_b)) %dopar% { cost_function(pars = unlist(c(tmp_pts_b[i, ])), probs = probs, values = values, y = y, wis = wis, q = q, quant = quant, hh = hh, boo_wis = boo_wis, two_pars = theta_weights) }
+        tmp_min_b <- min(unlist(tmp_rsp_b))
+        tmp_par_b <- c(unlist(c(tmp_pts_b[which.min(unlist(tmp_rsp_b)), 1:2])), tmp_min_b)
+        names(tmp_par_b) <- c("theta", "phi", "cost")
+        
+        if (tmp_min_b < tmp_par[3]) {
+          tmp_par <- tmp_par_b
+          before  <- TRUE
+          after   <- FALSE
+        } else {
+          before  <- FALSE
+          after   <- FALSE
+        }
+        
+      } else if ((before == FALSE) & (after == TRUE )) {
+        
+        tmp_pts_a <- pts[pts[, 2] == phi[phi_1 + i], ]
+        tmp_rsp_a <- foreach(i = 1:nrow(tmp_pts_a)) %dopar% { cost_function(pars = unlist(c(tmp_pts_a[i, ])), probs = probs, values = values, y = y, wis = wis, q = q, quant = quant, hh = hh, boo_wis = boo_wis, two_pars = theta_weights) }
+        tmp_min_a <- min(unlist(tmp_rsp_a))
+        tmp_par_a <- c(unlist(c(tmp_pts_a[which.min(unlist(tmp_rsp_a)), 1:2])), tmp_min_a)
+        names(tmp_par_a) <- c("theta", "phi", "cost")
+        
+        if (tmp_min_a < tmp_par[3]) {
+          tmp_par <- tmp_par_a
+          before  <- FALSE
+          after   <- TRUE
+        } else {
+          before  <- FALSE
+          after   <- FALSE
+        }
+        
+      } else if ((before == FALSE) & (after == FALSE)) {
+        # DO NOTHING
+      } else { stop("Error") }
+
+      count <- count + 1
+    }
+    
+    result <- tmp_par
+
+    ##################################################
+    ##################################################
+    
+    # rsp <- foreach(i = 1:nrow(pts)) %dopar% { cost_function(pars = unlist(c(pts[i, ])), probs = probs, values = values, y = y, wis = wis, q = q, quant = quant, hh = hh, boo_wis = boo_wis, two_pars = theta_weights) } # UPDATE LAST PARAMETER
+  
   } else {
     w <- list()
     for (m in 1:M) { w[[m]] <- seq(0, 1, by = by) }
     pts <- expand.grid(w)
     
     rsp <- foreach(i = 1:nrow(pts)) %dopar% { cost_function_weights_ind(w = unlist(c(pts[i, ])), probs = probs, values = values, y = y, q = q, quant = quant, exponentiate = FALSE) }
+    
+    # }
+    # 
+    # pts <- cbind(pts, unlist(rsp))
+    # if (theta_weights) { colnames(pts) <- c("theta", "phi", "cost") } else { colnames(pts) <- c(paste("w_", 1:M, sep = ""), "cost") }
+    # pos <- which.min(pts$cost)
+    # 
+    # if (theta_weights) { result <- unlist(c(pts[pos, 1:3])) } else { result <- unlist(c(pts[pos, 1:M])) }
+  
+    pts <- cbind(pts, unlist(rsp))
+    colnames(pts) <- c(paste("w_", 1:M, sep = ""), "cost")
+    pos <- which.min(pts$cost)
+    result <- unlist(c(pts[pos, 1:M]))
+    
   }
-  
-  pts <- cbind(pts, unlist(rsp))
-  if (theta_weights) { colnames(pts) <- c("theta", "phi", "cost") } else { colnames(pts) <- c(paste("w_", 1:M, sep = ""), "cost") }
-  pos <- which.min(pts$cost)
-  
-  if (theta_weights) { result <- unlist(c(pts[pos, 1:3])) } else { result <- unlist(c(pts[pos, 1:M])) }
-  
  result
 }
 
