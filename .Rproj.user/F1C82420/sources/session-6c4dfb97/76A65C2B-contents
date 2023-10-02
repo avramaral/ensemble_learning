@@ -1,8 +1,8 @@
-args <- commandArgs(trailingOnly = TRUE)
-state_idx        <- as.numeric(args[1])
-age_idx          <- as.numeric(args[2])
-ens_method       <- args[3]
-skip_recent_days <- as.logical(args[4])
+# args <- commandArgs(trailingOnly = TRUE)
+# state_idx        <- as.numeric(args[1])
+# age_idx          <- as.numeric(args[2])
+# ens_method       <- args[3]
+# skip_recent_days <- as.logical(args[4])
 # post_processing  <- as.logical(args[5])
 # post_select_mod  <- args[6] 
 
@@ -30,7 +30,7 @@ post_select_mod <- "Epiforecasts"
 state_idx <- 17
 age_idx <- 7
 
-cluster_size <- 2
+cluster_size <- 4
 
 ##################################################
 # LOAD AND PRE-PROCESS DATA
@@ -38,14 +38,6 @@ cluster_size <- 2
 ##################################################
 
 data <- read_csv(file = "DATA/data.csv.gz")
-# if (TRUE) {
-#           data <- read_csv(file = "OTHER_DATA/data.csv.gz")
-#   missing_data <- read_csv(file = "OTHER_DATA/missing.csv.gz")
-#   missing_data <- missing_data |> mutate(target_end_date = forecast_date + as.numeric(gsub(" day ahead inc hosp", "", target))) |>
-#                                   add_column(type = "quantile", value = NA, pathogen = "COVID-19", retrospective = FALSE) |>
-#                                   select(location, age_group, forecast_date, target_end_date, target, type, quantile, value, pathogen, model, retrospective)
-#   data <- rbind(data, missing_data)
-# }
 truth_data <- read_csv(file = "DATA/truth_40d.csv.gz")
 
 state <- unique(data$location)
@@ -81,10 +73,6 @@ r <- range(data$forecast_date)
 
 horizon <- -28:0
 probs <- c(0.025, 0.100, 0.250, 0.500, 0.750, 0.900, 0.975)
-
-# if (TRUE) {
-#   avail_matrix <- readRDS(paste("OTHER_DATA/model_availability_matrix/", state, "-", age, ".RDS", sep = ""))
-# }
 
 ##################################################
 # UNTRAINED ENSEMBLE

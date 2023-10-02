@@ -1,6 +1,6 @@
-args <- commandArgs(trailingOnly = TRUE)
-state_idx        <- as.numeric(args[1])
-age_idx          <- as.numeric(args[2])
+# args <- commandArgs(trailingOnly = TRUE)
+# state_idx        <- as.numeric(args[1])
+# age_idx          <- as.numeric(args[2])
 
 ##################################################
 
@@ -107,10 +107,6 @@ if (file.exists(compute_wis_file)) {
 
 df_wis <- wis_truth$df_wis
 wis_summ <- wis_truth$wis_summ
-
-# If needed
-# df_wis[(df_wis$model == "ISW (St.1.)") | (df_wis$model == "ISW (St.2.)"), "wis"] <- 0
-# wis_summ <- lapply(X = wis_summ, FUN = function (x) { x[5:6] <- 0; x } )
 
 # Bar plot
 plot_wis_bar(df_wis = df_wis, wis_summ = wis_summ, models = models, colors = colors, ylim_manual = 120)
