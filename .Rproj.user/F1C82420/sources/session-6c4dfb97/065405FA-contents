@@ -1,0 +1,1223 @@
+
+##################################################
+##################################################
+##################################################
+
+unregister_dopar <- function () {
+  env <- foreach:::.foreachGlobals
+  rm(list = ls(name = env), pos = env)
+}
+
+##################################################
+##################################################
+##################################################
+
+filter_data <- function (data, truth_data, models, loc = "DE", age_gr = "00+", extra_delay = 0, truth_past = 90, missing_range = FALSE, ...) {
+  
+  data <- data |> filter(location %in% loc, age_group %in% age_gr, model %in% models)
+  truth_data <- truth_data |> filter(location %in% loc, age_group %in% age_gr)
+  
+  models <- unique(data$model)
+  
+  if (!missing_range) {
+    r_tmp <- list()
+    for (i in 1:length(models)) {
+      data_tmp <- data |> filter(model == models[i])
+      r_tmp[[i]] <- range(data_tmp$forecast_date)
+      
+      if (i == 1) {
+        r <- r_tmp[[i]]
+      } else {
+        r <- c(max(r[1], r_tmp[[i]][1]), min(r[2], r_tmp[[i]][2]))
+      }
+    }
+  } else {
+    r <- range(data$forecast_date)
+  }
+  
+  truth_r <- range(truth_data$date)
+  r <- c(max(r[1], truth_r[1]), min(r[2], truth_r[2])) 
+  
+  data <- data |> filter((forecast_date >= (r[1] + extra_delay)) & (forecast_date <= r[2]))
+  truth_data <- truth_data |> filter((date >= (r[1] + extra_delay - truth_past)) & (date <= r[2]))
+  
+  list(data = data, truth_data = truth_data)
+}
+
+##################################################
+##################################################
+##################################################
+
+compute_naive_ensemble <- function (data, loc = "DE", age_gr = "00+", ...) {
+  
+  data_mean <- data[0, ]
+  data_median <- data[0, ]
+  
+  days <- unique(data$forecast_date)
+  horizons <- unique(data$target)
+  quantiles <- unique(data$quantile)
+  
+  count <- 1
+  b <- txtProgressBar(min = 1, max = length(days), initial = 1)
+  for (d in days) {
+    for (h in horizons) {
+      for (q in quantiles) {
+        
+        if (is.na(q)) {
+          tmp_value <- data |> filter(forecast_date == d, target == h, type == "mean", is.na(quantile)) |> select(value) |> c() |> unlist()
+        } else {
+          tmp_value <- data |> filter(forecast_date == d, target == h, quantile == q) |> select(value) |> c() |> unlist()
+        }
+        
+        tmp_mean   <- mean(tmp_value, rm.na = TRUE)
+        tmp_median <- median(tmp_value, rm.na = TRUE)
+        
+        hh <- as.numeric(strsplit(h, " ")[[1]][1])
+        
+        if (is.na(q)) { tt <- "mean" } else { tt <- "quantile" }
+        
+        data_mean   <- data_mean   |> add_row(location = loc, age_group = age_gr, forecast_date = days[count], target_end_date = (days[count] + hh), target = h, type = tt, quantile = q, value = tmp_mean,   pathogen = "COVID-19", model = "Mean",   retrospective = FALSE)
+        data_median <- data_median |> add_row(location = loc, age_group = age_gr, forecast_date = days[count], target_end_date = (days[count] + hh), target = h, type = tt, quantile = q, value = tmp_median, pathogen = "COVID-19", model = "Median", retrospective = FALSE)
+      }
+    }
+    count <- count + 1
+    setTxtProgressBar(b, count) 
+  }
+  close(b)
+  
+  rbind(data_mean, data_median)
+}
+
+##################################################
+##################################################
+##################################################
+
+retrieve_data <- function (data, truth_data, naive_ensemble, models, horizon, start_date, end_date, skip_first_days = 1, training_size = 90, method = "Median", ...) {
+  
+  days <- seq(start_date + skip_first_days, end_date, by = "1 day") 
+  
+  y <- list()
+  values <- list()
+  current <- list()
+  y_current <- list()
+  
+  count <- 1
+  for (k in 1:length(days)) {
+    dt <- days[k]
+    print(paste(dt, " (", sprintf("%03d", count), "/", sprintf("%03d", length(days)), ")", sep = ""))
+    
+    values[[as.character(dt)]] <- list()
+    y[[as.character(dt)]] <- list()
+    current[[as.character(dt)]] <- list()
+    y_current[[as.character(dt)]] <- list()
+    
+    b <- txtProgressBar(min = 1, max = length(horizon), initial = 1)
+    
+    for (i in 1:length(horizon)) {
+      
+      h <- horizon[i]
+      
+      y[[as.character(dt)]][[as.character(h)]] <- select_real_data(naive_ensemble = naive_ensemble, truth_data = truth_data, dt = dt, horizon = h, training_size = training_size, method = method)
+      y_current[[as.character(dt)]][[as.character(h)]] <- select_real_data(naive_ensemble = naive_ensemble, truth_data = truth_data, dt = dt, horizon = h, method = method, current = TRUE)
+      values[[as.character(dt)]][[as.character(h)]] <- select_nowcasts(data = data, dt = dt, horizon = h, models = models, training_size = training_size)
+      current[[as.character(dt)]][[as.character(h)]] <- select_nowcasts(data = data, dt = dt, horizon = h, models = models, current = TRUE)
+      
+      setTxtProgressBar(b, i) 
+    }
+    close(b)
+    count <- count + 1
+  }
+  
+  list(y = y, y_current = y_current, values = values, current = current)
+}
+
+##################################################
+##################################################
+##################################################
+
+
+select_real_data <- function (naive_ensemble, truth_data, dt, horizon, n_forecast = 28, stable = 40, training_size = 90, method = "Median", current = FALSE, ...) {
+  
+  if (current) {
+    target_end_date_value = dt + horizon
+    
+    if (method == "Median") {
+      real_data <- naive_ensemble |> filter(forecast_date == dt, target_end_date == target_end_date_value, quantile == 0.5, model == method) |> select(value) |> unlist()
+    } else if (method == "Mean") {
+      real_data <- naive_ensemble |> filter(forecast_date == dt, target_end_date == target_end_date_value, is.na(quantile), model == method) |> select(value) |> unlist()
+    } else { stop("Invalid method.") }
+    
+  } else {
+    r <- range(data$forecast_date)
+    number_days <- as.numeric((dt - r[1]))
+    number_days <- min(number_days, training_size)
+    
+    real_data <- rep(0, number_days)
+    
+    for (n in 1:number_days) {
+      
+      target_end_date_value = dt - n + horizon
+      
+      if ((- n + horizon) < (- stable)) {
+        real_data[n] <- truth_data[truth_data$date == target_end_date_value, ]$truth
+      } else if ((- n + horizon) < (- n_forecast)) {
+        if (method == "Median") {
+          tmp_real_data <- naive_ensemble |> filter(forecast_date == dt - n + (n_forecast + horizon), target_end_date == target_end_date_value, quantile == 0.5, model == method) |> select(value) |> unlist()
+        } else if (method == "Mean") {
+          tmp_real_data <- naive_ensemble |> filter(forecast_date == dt - n + (n_forecast + horizon), target_end_date == target_end_date_value, is.na(quantile), model == method) |> select(value) |> unlist()
+        }
+        inner_count <- 0
+        while ((length(tmp_real_data) == 0) & (inner_count < 10)) {
+          inner_count <- inner_count + 1
+          if (method == "Median") {
+            tmp_real_data <- naive_ensemble |> filter(forecast_date == dt - n + (n_forecast + horizon) + inner_count, target_end_date == target_end_date_value + inner_count, quantile == 0.5, model == method) |> select(value) |> unlist()
+          } else if (method == "Mean") {
+            tmp_real_data <- naive_ensemble |> filter(forecast_date == dt - n + (n_forecast + horizon) + inner_count, target_end_date == target_end_date_value + inner_count, is.na(quantile), model == method) |> select(value) |> unlist()
+          }
+        }
+        real_data[n] <- tmp_real_data
+      } else {
+        if (method == "Median") {
+          tmp_real_data <- naive_ensemble |> filter(forecast_date == dt, target_end_date == target_end_date_value, quantile == 0.5, model == method) |> select(value) |> unlist()
+        } else if (method == "Mean") {
+          tmp_real_data <- naive_ensemble |> filter(forecast_date == dt, target_end_date == target_end_date_value, is.na(quantile), model == method) |> select(value) |> unlist()
+        }
+        inner_count <- 0
+        while ((length(tmp_real_data) == 0) & (inner_count < 10)) {
+          inner_count <- inner_count + 1
+          if (method == "Median") {
+            tmp_real_data <- naive_ensemble |> filter(forecast_date == dt + inner_count, target_end_date == target_end_date_value + inner_count, quantile == 0.5, model == method) |> select(value) |> unlist()
+          } else if (method == "Mean") {
+            tmp_real_data <- naive_ensemble |> filter(forecast_date == dt + inner_count, target_end_date == target_end_date_value + inner_count, is.na(quantile), model == method) |> select(value) |> unlist()
+          }
+        }
+        real_data[n] <- tmp_real_data
+      }
+    }
+  }
+  real_data
+}
+
+##################################################
+##################################################
+##################################################
+
+select_nowcasts <- function (data, dt, horizon, models, n_quantiles = 7, training_size = 90, current = FALSE, ...) {
+  
+  values_list <- list()
+  
+  if (current) {
+    
+    values <- matrix(data = 0, nrow = length(models), ncol = n_quantiles)
+    
+    for (m in 1:length(models)) {
+      
+      tmp <- data |> filter(forecast_date == dt, target_end_date == dt + horizon, type == "quantile", model == models[m]) |> select(value) |> unlist()  
+      inner_count <- 0
+      while ((length(tmp) == 0) & (inner_count < 10)) {
+        inner_count <- inner_count + 1
+        tmp <- data |> filter(forecast_date == dt + inner_count, target_end_date == dt + horizon + inner_count, type == "quantile", model == models[m]) |> select(value) |> unlist() 
+      }
+      
+      if (length(tmp) != 0) {
+        values[m, ] <- tmp
+      } else {
+        values[m, ] <- rep(NA, n_quantiles)
+      }
+    }
+    
+    values_list[[1]] <- values
+    
+  } else {
+    
+    r <- range(data$forecast_date)
+    number_days <- as.numeric((dt - r[1]))
+    number_days <- min(number_days, training_size)
+    
+    for (n in 1:number_days) {
+      
+      values <- matrix(data = 0, nrow = length(models), ncol = n_quantiles)
+      
+      tmp_models <- ungroup(data) |> filter(forecast_date == dt - n, target_end_date == dt - n + horizon, type == "quantile")  
+      
+      for (m in 1:length(models)) {
+        
+        tmp <- c(tmp_models[tmp_models$model == models[m], "value"])$value
+        
+        inner_count <- 0
+        while ((length(tmp) == 0) & (inner_count < 10)) { # Backup recovery
+          inner_count <- inner_count + 1
+          tmp <- data |> filter(forecast_date == dt - n + inner_count, target_end_date == dt - n + horizon + inner_count, type == "quantile", model == models[m]) |> select(value) |> unlist()  
+        }
+        
+        if (length(tmp) != 0) {
+          values[m, ] <- tmp
+        } else {
+          values[m, ] <- rep(NA, n_quantiles)
+        }
+      }
+      values_list[[n]] <- values
+    }
+  }
+  
+  values_list
+}
+
+##################################################
+##################################################
+##################################################
+
+compute_wis_three_components <- function (data, truth_data, start_date, end_date, horizon, models, probs = c(0.025, 0.100, 0.250, 0.500, 0.750, 0.900, 0.975), skip_first_days = 1, verbose = TRUE, ...) {
+  
+  days <- seq(start_date + skip_first_days, end_date, by = "1 day")
+  
+  wis <- matrix(data = 0, nrow = length(days), ncol = length(models))
+  
+  wis_sprd <- matrix(data = 0, nrow = length(days), ncol = length(models))
+  wis_over <- matrix(data = 0, nrow = length(days), ncol = length(models))
+  wis_undr <- matrix(data = 0, nrow = length(days), ncol = length(models))
+  
+  if (verbose) { b <- txtProgressBar(min = 0, max = length(days), initial = 0) }
+  for (k in 1:length(days)) {
+    dt <- days[k]
+    td <- dt + horizon
+    
+    sliced_data <- data |> filter(forecast_date == dt, target_end_date == td, type == "quantile")
+    sliced_y <- truth_data |> filter(date == td) |> select(truth) |> as.integer()  
+    
+    for (m in 1:length(models)) {
+      probs_tmp <- sliced_data[((sliced_data$model == models[m]) & (sliced_data$quantile %in% probs)), ]$quantile
+      quant_tmp <- sliced_data[((sliced_data$model == models[m]) & (sliced_data$quantile %in% probs)), ]$value
+      wis[k, m  ]      <- compute_wis(probs = probs_tmp, quant = quant_tmp, y = sliced_y, average = TRUE)
+      wis_sprd[k, m  ] <- compute_wis(probs = probs_tmp, quant = quant_tmp, y = median(quant_tmp), average = TRUE)
+      diff_wis <- wis[k, m  ] - wis_sprd[k, m  ]
+      if (length(quant_tmp) != 0) {
+        if (median(quant_tmp) > sliced_y) {
+          wis_over[k, m  ] <- diff_wis
+          wis_undr[k, m  ] <- 0
+        } else {
+          wis_undr[k, m  ] <- diff_wis
+          wis_over[k, m  ] <- 0
+        }  
+      } else {
+        wis_over[k, m  ] <- NaN
+        wis_undr[k, m  ] <- NaN
+      }
+      
+    }
+    if (verbose) { setTxtProgressBar(b, k) }
+  }
+  if (verbose) { close(b) }
+  
+  list(wis = wis, wis_sprd = wis_sprd, wis_over = wis_over, wis_undr = wis_undr)
+}
+
+##################################################
+##################################################
+##################################################
+
+compute_wis <- function (probs, quant, y, average = TRUE, ...) {
+  if (length(probs) != length(quant)) { stop("`probs` and `quant` must have the same size.") }
+  partial <- apply(X = data.frame(probs = c(probs), quant = c(quant)), MARGIN = 1, FUN = function (x) {
+    2 * (as.integer(y <= x[2]) - x[1]) * (x[2] - y)
+  })
+  if (average) {
+    result <- mean(partial)
+  } else {
+    result <- partial
+  }
+  result
+}
+
+##################################################
+##################################################
+##################################################
+
+compute_wis_truth <- function (data, truth_data, models, horizon, start_date, end_date, probs =  c(0.025, 0.100, 0.250, 0.500, 0.750, 0.900, 0.975), skip_first_days = 41, verbose = TRUE, ...) {
+  wis <- list()
+  wis_summ <- list()
+  wis_sprd <- list()
+  wis_over <- list()
+  wis_undr <- list()
+  
+  wis_summ_avg <- rep(0, length(models))
+  wis_sprd_avg <- rep(0, length(models))
+  wis_over_avg <- rep(0, length(models))
+  wis_undr_avg <- rep(0, length(models))
+  
+  if (!verbose) { b <- txtProgressBar(min = 1, max = length(horizon), initial = 1) }
+  
+  count <- 1
+  for (h in horizon) {
+    if (verbose) { print(paste("Horizon: ", h, sep = "")) }
+    
+    # Make all models comparable. Commonly, `skip_first_days = 40 + 1`
+    wis[[as.character(h)]] <- compute_wis_three_components(data = data, truth_data = truth_data, skip_first_days = skip_first_days, start_date = start_date, end_date = end_date, horizon = h, models = models, probs = probs, verbose = verbose)
+    wis_summ[[as.character(h)]] <- wis[[as.character(h)]]$wis      |> colMeans(na.rm = TRUE)
+    wis_sprd[[as.character(h)]] <- wis[[as.character(h)]]$wis_sprd |> colMeans(na.rm = TRUE)
+    wis_over[[as.character(h)]] <- wis[[as.character(h)]]$wis_over |> colMeans(na.rm = TRUE)
+    wis_undr[[as.character(h)]] <- wis[[as.character(h)]]$wis_undr |> colMeans(na.rm = TRUE)
+    
+    wis_summ_avg <- wis_summ_avg + wis_summ[[as.character(h)]] 
+    wis_sprd_avg <- wis_sprd_avg + wis_sprd[[as.character(h)]]
+    wis_over_avg <- wis_over_avg + wis_over[[as.character(h)]]
+    wis_undr_avg <- wis_undr_avg + wis_undr[[as.character(h)]]
+    
+    count <- count + 1
+    if (!verbose) { setTxtProgressBar(b, count) }
+  }
+  
+  if (!verbose) { close(b) }
+  
+  wis_summ_avg <- wis_summ_avg / length(horizon)
+  wis_sprd_avg <- wis_sprd_avg / length(horizon)
+  wis_over_avg <- wis_over_avg / length(horizon)
+  wis_undr_avg <- wis_undr_avg / length(horizon)
+  
+  df_wis <- data.frame(model = rep(models, 3), wis = c(wis_sprd_avg, wis_over_avg, wis_undr_avg), component = rep(c("sprd", "over", "undr"), each = length(models)))
+  df_wis$model <- factor(x = df_wis$model, levels = models)
+  
+  list(df_wis = as_tibble(df_wis), wis_summ = wis_summ)
+}
+
+##################################################
+##################################################
+##################################################
+
+# This function is a probably a duplicate (double check it)
+compute_wis_data <- function (data, truth_data, start_date, end_date, horizon, models, skip_first_days = 0, probs = c(0.025, 0.100, 0.250, 0.500, 0.750, 0.900, 0.975), ...) {
+  days <- seq(start_date + skip_first_days, end_date, by = "1 day")
+  
+  wis <- matrix(data = 0, nrow = length(days), ncol = length(models))
+  
+  for (k in 1:length(days)) {
+    dt <- days[k]
+    td <- dt + horizon
+    
+    sliced_data <- data |> filter(forecast_date == dt, target_end_date == td, type == "quantile")
+    sliced_y <- truth_data |> filter(date == td) |> select(truth) |> as.integer()  
+    
+    for (m in 1:length(models)) {
+      wis[k, m ] <- compute_wis(probs = sliced_data[((sliced_data$model == models[m]) & (sliced_data$quantile %in% probs)), ]$quantile, quant = sliced_data[((sliced_data$model == models[m]) & (sliced_data$quantile %in% probs)), ]$value, y = sliced_y)
+    }
+  }
+  
+  wis
+}
+
+##################################################
+##################################################
+##################################################
+
+# Compute WIS per days based on the result from `compute_wis_data()`
+compute_wis_days <- function (wis, models, start_date, end_date, q = 0, total_days = 90, skip_first_days = 1, average = TRUE, ...) {
+  
+  days <- seq(start_date + skip_first_days, end_date, by = "1 day") 
+  
+  wis_days <- data.frame(forecast_date = as.Date(character()), model = character(), value = double(), stringsAsFactors = FALSE)
+  wis_days <- as_tibble(wis_days)
+  
+  H <- length(wis)
+  
+  for (k in 2:length(days)) { 
+    
+    dt <- days[k]
+    
+    if (average) {
+      
+      number_days <- min((k - 1), total_days)
+      partial_wis <- matrix(data = 0, nrow = (H * number_days), ncol = ncol(wis[[1]]))
+      
+      for (i in 1:H) {
+        if (!q) {
+          partial_wis[(((i - 1) * number_days) + 1):(i * number_days), ] <- wis[[i]][((k - number_days + 1):(k)), ]
+        } else {
+          tmp_wis <- wis[[i]][, , q]
+          partial_wis[(((i - 1) * number_days) + 1):(i * number_days), ] <- tmp_wis[(max(1, (k - total_days))):(k - 1), ] # wis[[i]][((k - number_days + 1):(k)), , q]
+        }
+      }
+    } else {
+      
+      partial_wis <- matrix(data = 0, nrow = H, ncol = ncol(wis[[1]]))
+      for (i in 1:H) {
+        if (!q) {
+          partial_wis[i, ] <- wis[[i]][k, ]
+        } else {
+          tmp_wis <- wis[[i]][, , q]
+          partial_wis[i, ] <- tmp_wis[k, ]
+        }
+      }
+    }
+    partial_wis <- apply(X = partial_wis, MARGIN = 2, FUN = mean)
+    
+    for (p in 1:length(partial_wis)) {
+      wis_days <- wis_days |> add_row(forecast_date = dt, model = models[p], value = partial_wis[p])
+    }
+  }
+  wis_days
+}
+
+
+##################################################
+##################################################
+##################################################
+
+compute_wis_horizon_truth <- function (models, horizon, wis_summ, ...) {
+  df_wis_horizon <- data.frame(model = rep(models, length(horizon)), horizon = rep(horizon, each = length(models)), wis = 0)
+  count <- 1
+  for (i in 1:length(wis_summ)) {
+    for (j in 1:length(models)) {
+      df_wis_horizon$wis[count] <- wis_summ[[i]][j]
+      count <- count + 1
+    }
+  }
+  
+  df_wis_horizon$model <- factor(x = df_wis_horizon$model, levels = models)
+  df_wis_horizon
+}
+
+##################################################
+##################################################
+##################################################
+
+process_data_skip_days <- function (y, values, uncertain_size = 40, ...) {
+  
+  values_idx_1 <- names(values)
+  values_idx_2 <- names(values[[1]])
+  
+  b <- txtProgressBar(min = 1, max = length(values_idx_1), initial = 1)
+  for (i in 1:length(values_idx_1)) {
+    for (j in 1:length(values_idx_2)) {
+      values[[values_idx_1[i]]][[as.character(values_idx_2[j])]][(1:uncertain_size)] <- NULL
+      y[[values_idx_1[i]]][[as.character(values_idx_2[j])]] <- y[[values_idx_1[i]]][[as.character(values_idx_2[j])]][-(1:uncertain_size)]
+    }
+    setTxtProgressBar(b, i)
+  }
+  close(b)
+  
+  list(y = y, values = values)
+}
+
+##################################################
+##################################################
+##################################################
+
+process_data_ignore_models <- function (current, values, idx_models = 1:8, ...) {
+  
+  N <- length(values)
+  H <- length(values[[1]])
+  
+  b <- txtProgressBar(min = 1, max = N, initial = 1)
+  for (n in 1:N) {
+    for (h in 1:H) {
+      tmp_count <- length(values[[n]][[h]])
+      for (count in 1:tmp_count) {
+        values[[n]][[h]][[count]] <- values[[n]][[h]][[count]][idx_models, ]
+      }
+      current[[n]][[h]][[1]] <- current[[n]][[h]][[1]][idx_models, ]
+    }
+    setTxtProgressBar(b, n)
+  }
+  close(b)
+  
+  list(current = current, values = values)
+}
+
+##################################################
+##################################################
+##################################################
+
+compute_wis_training_horizon <- function (data, truth_data, start_date, end_date, horizon, models, training_size, skip_first_days = 1, quant = TRUE, probs = c(0.025, 0.100, 0.250, 0.500, 0.750, 0.900, 0.975), ...) {
+  days <- seq(start_date + skip_first_days, end_date, by = "1 day")
+  
+  if (!quant) {
+    wis <- matrix(data = 0, nrow = length(days), ncol = length(models))
+  } else {
+    wis <- array(data = 0, dim = c(length(days), length(models), length(probs)))
+  }
+
+  b <- txtProgressBar(min = 0, max = length(days), initial = 0)
+  for (k in 1:length(days)) {
+    dt <- days[k]
+    
+    number_days <- as.numeric((dt - start_date))
+    number_days <- min(number_days, training_size)
+    number_days <- number_days - (skip_first_days - 1)
+    
+    if (!quant) {
+      wis_tmp <- matrix(data = 0, nrow = number_days, ncol = length(models))
+    } else {
+      wis_tmp <- array(data = 0, dim = c(number_days, length(models), length(probs)))
+    }
+    
+    for (n in 1:number_days) {
+      tmp_data <- data[[as.character(dt)]][[as.character(horizon)]][[n]]
+      tmp_y <- truth_data[[as.character(dt)]][[as.character(horizon)]][n]
+      
+      for (m in 1:length(models)) {
+        if (!quant) {
+          wis_tmp[n, m  ] <- compute_wis(probs = probs, quant = tmp_data[m, ], y = tmp_y, average = (!quant))  
+        } else {
+          wis_tmp[n, m, ] <- compute_wis(probs = probs, quant = tmp_data[m, ], y = tmp_y, average = (!quant))  
+        }
+      }
+    }
+    if (!quant) {
+      wis[k,   ] <- apply(X = wis_tmp, MARGIN = 2      , FUN = mean)
+    } else {
+      wis[k, , ] <- apply(X = wis_tmp, MARGIN = c(2, 3), FUN = mean)
+    }
+    setTxtProgressBar(b, k)
+  }
+  close(b)
+    
+  wis
+}
+
+##################################################
+##################################################
+##################################################
+
+
+compute_wis_training <- function (data, truth_data, start_date, end_date, horizon, models, training_size, skip_recent_days = FALSE, quant = TRUE, horiz = TRUE, probs = c(0.025, 0.100, 0.250, 0.500, 0.750, 0.900, 0.975), ...) {
+  
+  skip_first_days <- ifelse(skip_recent_days, 1 + uncertain_size, 1)
+  
+  wis <- list()
+  wis_avg <- list()
+  
+  for (h in horizon) {
+    print(paste("Horizon: ", h, sep = ""))
+    
+    wis[[as.character(h)]] <- compute_wis_training_horizon(data = data, truth_data = truth_data, start_date = start_date, end_date = end_date, horizon = h, models = models, training_size = training_size, skip_first_days = skip_first_days, quant = quant)
+    
+    if (!quant) {
+      wis_avg[[as.character(h)]] <- wis[[as.character(h)]] |> colMeans(na.rm = TRUE)
+    } else {
+      wis_avg[[as.character(h)]] <- apply(X = wis[[as.character(h)]], MARGIN = c(2, 3), FUN = mean, na.rm = TRUE)
+    }
+  }
+    
+  if (!horiz) {
+    
+    wis <- apply(X = simplify2array(wis), MARGIN = c(1, 2, 3), FUN = mean)
+    
+    if (!quant) {
+      wis_avg <- apply(X = simplify2array(wis_avg), MARGIN = c(1   ), FUN = mean) # Check it if needed
+    } else {
+      wis_avg <- apply(X = simplify2array(wis_avg), MARGIN = c(1, 2), FUN = mean)
+    }
+    
+  }
+  
+  list(wis = wis, wis_avg = wis_avg)
+}
+
+##################################################
+##################################################
+##################################################
+
+compute_weights <- function (wis = NULL, ...) {
+  
+  wis <- wis + 1e-6
+  weights <- 1 / wis
+  
+  if (is.null(dim(weights))) { # Weights do not depend on time
+    weights <- weights / sum(weights, na.rm = TRUE)  
+  } else { # Weights depend on time
+    if (length(dim(weights)) == 3) { # Weights depend on the quantiles
+      for (d in 1:(dim(weights)[1])) {
+        for (i in 1:(dim(weights)[3])) {
+          weights[d, , i] <- weights[d, , i] / sum(weights[d, , i], na.rm = TRUE)
+        }
+      }
+    } else { # Weights do not depend on the quantiles
+      for (i in 1:ncol(weights)) {
+        weights[, i] <- weights[, i] / sum(weights[, i], na.rm = TRUE)
+      }
+    }
+  }
+  
+  weights
+}
+
+##################################################
+##################################################
+##################################################
+
+compute_wis_horizon_training <- function (wis_avg, models, quant = TRUE, probs = c(0.025, 0.100, 0.250, 0.500, 0.750, 0.900, 0.975), ...) {
+  
+  horizon <- as.numeric(names(wis_avg))
+  
+  if (!quant) {
+    df_wis_horizon <- data.frame(model = rep(models, length(horizon)), horizon = rep(horizon, each = length(models)), wis = 0)  
+  } else {
+    df_wis_horizon <- data.frame(model = rep(models, (length(horizon) * length(probs))), horizon = rep(rep(horizon, each = length(models)), length(probs)), probs = rep(probs, each = (length(models) * length(horizon))), wis = 0)  
+    df_wis_horizon$probs <- factor(x = df_wis_horizon$probs, levels = probs) 
+  }
+  df_wis_horizon$model <- factor(x = df_wis_horizon$model, levels = models) 
+  
+  for (h in horizon) {
+    df_wis_horizon[df_wis_horizon$horizon == h, "wis"] <- c(wis_avg[[as.character(h)]])
+  } 
+  
+  df_wis_horizon
+}
+
+##################################################
+##################################################
+##################################################
+
+create_new_tibble <- function (...) {
+  as_tibble(data.frame(location         = character(), 
+                       age_group        = character(), 
+                       forecast_date    = as.Date(character()), 
+                       target_end_date  = as.Date(character()), 
+                       target           = character(), 
+                       type             = character(), 
+                       quantile         = double(), 
+                       value            = double(), 
+                       pathogen         = character(), 
+                       model            = character(), 
+                       retrospective    = logical(), 
+                       stringsAsFactors = FALSE))
+}
+
+##################################################
+##################################################
+##################################################
+
+compute_ensemble <- function (ens_method, y, y_current, values, current, ens_models = NULL, weights = NULL, k = NULL, lower = -10, upper = 10, quant = TRUE, horiz = TRUE, probs = c(0.025, 0.100, 0.250, 0.500, 0.750, 0.900, 0.975), short_grid_search = TRUE, by = 0.01, ...) {
+  m <- ens_method[1]
+  
+  if (m == "wis") {
+    res <- ensemble_wis(current = current, weights = weights, k = k)
+  } else if (m == "pinball") {
+    # if (!horiz) { current <- list(current) } 
+    res <- ensemble_pinball(y = y, y_current = y_current, values = values, current = current, ens_models = ens_models, lower = lower, upper = upper, quant = quant, horiz = horiz, probs = probs, short_grid_search = short_grid_search, by = by)
+  } else {
+    stop("Choose a valid ensemble method.")
+  }
+  
+  res
+}
+
+##################################################
+##################################################
+##################################################
+
+ensemble_wis <- function (current, weights, k = NULL,...) {
+  
+  if (length(dim(weights)) == 3) { # Weights depend on the quantiles
+    res <- rep(0, length(probs))
+    for (q in 1:length(probs)) {
+      res[q] <- weights[k, , q] %*% current[, q]
+    }
+    weights <- weights[k, , ]
+  } else { # Weights do not depend on the quantiles
+    if (is.null(nrow(weights))) {
+      res <- weights %*% current
+    } else {
+      res <- rep(0, length(probs))
+      for (q in 1:length(probs)) {
+        res[q] <- weights[, q] %*% current[, q]
+      }
+    }
+  }
+  
+  list(nowcast = res, weights = weights)
+}
+
+##################################################
+##################################################
+##################################################
+
+input_new_data <- function (new_data, ensemble, ens_method, h, state, age, day, horizon = -28:0, probs = c(0.025, 0.100, 0.250, 0.500, 0.750, 0.900, 0.975), horiz = TRUE, ...) {
+  
+  name_method <- ifelse(ens_method == "wis", "DISW", "ISW")
+  
+  if (horiz) {
+    for (q in 1:length(probs)) {
+      value <- ensemble[[as.character(dt)]][[as.character(h)]]$nowcast
+      if (class(value)[1] == "numeric") {
+        value <- value[q]
+      } else  {
+        value <- value[1, q]
+      }
+      new_data <- new_data |> add_row(location = state, age_group = age, forecast_date = dt, target_end_date = (dt + h), target = paste(h, " day ahead inc hosp", sep = ""), type = "quantile", quantile =  probs[q], value = value, pathogen = "COVID-19", model = name_method, retrospective = FALSE)
+    }
+  } else {
+    for (i in 1:length(horizon)) {
+      for (q in 1:length(probs)) {
+        value <- ensemble[[as.character(dt)]]$nowcast[as.character(horizon[i]), q]
+        new_data <- new_data |> add_row(location = state, age_group = age, forecast_date = dt, target_end_date = (dt + horizon[i]), target = paste(horizon[i], " day ahead inc hosp", sep = ""), type = "quantile", quantile =  probs[q], value = value, pathogen = "COVID-19", model = name_method, retrospective = FALSE)
+      }
+    }
+  }
+  
+  
+  new_data
+}
+
+##################################################
+##################################################
+##################################################
+
+ensemble_pinball <- function (y, y_current, values, current, ens_models = NULL, lower = -10, upper = 10, quant = TRUE, horiz = TRUE, probs = c(0.025, 0.100, 0.250, 0.500, 0.750, 0.900, 0.975), short_grid_search = TRUE, by = 0.01, ...) {
+  
+  if (!horiz & !quant) { stop("This combination of `quant` and `horiz` is not implemented.") }
+  
+  # H: number of horizons
+  # N: number of day points
+  # M: number of models
+  
+  if (horiz) { # Weights depend on the horizons
+    N <- length(values)
+    M <- nrow(values[[1]])
+    if (is.null(M)) {
+      M <- 1
+    }
+  } else { # Weights do not depend on the horizons
+    H <- length(values)
+    N <- length(values[[1]])
+    M <- nrow(values[[1]][[1]])
+  }
+  
+  if (!quant) { # Weights do not depend on the quantiles
+    wis <- matrix(data = 0, nrow = N, ncol = M)
+  } else { # Weights depend on the quantiles
+    if (horiz) {
+      wis <- array(data = 0, dim = c(N, M, length(probs)))
+    } else { 
+      wis <- array(data = 0, dim = c((N * H), M, length(probs)))
+    }
+  }
+  
+  # Compute the score (WIS)
+  if (horiz) {
+    for (n in 1:N) {
+      if (!quant) { # Missing implementation for more than one model
+        wis[n, ] <- apply(X = values[[n]], MARGIN = 1, FUN = compute_wis, probs = probs, y = y[n], average = (!quant))  
+      } else {
+        if (M == 1) { 
+          wis[n, , ] <- compute_wis(probs = probs, quant = values[[n]], y = y[n], average = (!quant))
+        } else {
+          wis[n, , ] <- apply(X = values[[n]], MARGIN = 1, FUN = compute_wis, probs = probs, y = y[n], average = (!quant)) |> t() 
+        }
+      }
+    }
+  } else { 
+    horizon <- as.numeric(names(y))
+    
+    count <- 1
+    for (n in 1:N) {
+      for (h in 1:H) {
+        wis[count, , ] <- apply(X = values[[as.character(horizon[h])]][[n]], MARGIN = 1, FUN = compute_wis, probs = probs, y = y[[as.character(horizon[h])]][n], average = (!quant)) |> t()
+        count <- count + 1
+      }
+    }
+  }
+  
+  ##################################################
+  
+  # Optimization routine
+  if (sum(wis, na.rm = TRUE) == 0) {
+    theta <- 0
+  } else {
+    if (!quant) {
+      # To be implemented
+      stop("To be implemented.")
+    } else {
+
+      theta <- rep(x = 0, times = length(probs))
+      phi <- rep(x = 0, times = length(probs))
+      
+      for (q in 1:length(probs)) {
+        tmp_wis <- wis[, , q]
+        if (is.null(dim(tmp_wis))) {
+          tmp_wis <- t(as.matrix(tmp_wis)) 
+        }
+        est_pars <- grid_optim(probs = probs, values = values, y = y, q = q, quant = quant, M = M, wis = tmp_wis, by = by, theta_lim = c(lower, upper), horiz = horiz, short_grid_search = short_grid_search)
+        if (M == 1) {
+          phi[q] <- est_pars[1]
+        } else {
+          theta[q] <- est_pars[1]
+          phi[q]   <- est_pars[2] 
+        }
+      }
+    }
+  }
+  
+  ##################################################
+  
+  # Compute the new weights and nowcasts
+  if (!quant) {
+    w <- par_weights(theta = theta, wis = apply(X = wis, MARGIN = 2, FUN = mean))
+    result <- list(nowcast = w %*% current, weights = w, theta = theta)
+  } else {
+    w <- matrix(data = 0, nrow = length(probs), ncol = M)
+    if (horiz) {
+      nowcast <- rep(x = 0, times = length(probs))
+    } else {
+      nowcast <- matrix(data = 0, nrow = H, ncol = length(probs))
+      rownames(nowcast) <- horizon
+    }
+    tmp_wis_list <- list()
+    for (q in 1:length(probs)) {
+      tmp_wis <- wis[, , q]
+      if (is.null(dim(tmp_wis))) {
+        tmp_wis <- t(as.matrix(tmp_wis)) 
+      }
+      tmp_wis_list[[q]] <- apply(X = tmp_wis, MARGIN = 2, FUN = mean)
+      if (M == 1) {
+        w[q, ] <- phi[q]
+      } else {
+        w[q, ] <- par_weights_scale(theta = theta[q], phi = phi[q], wis = apply(X = tmp_wis, MARGIN = 2, FUN = mean))
+      }
+      if (horiz) {
+        if (M == 1) {
+          nowcast[q] <- w[q, ] %*% current[  q]
+        } else {
+          nowcast[q] <- w[q, ] %*% current[, q]
+        }
+      } else {
+        for (h in 1:H) {
+          nowcast[as.character(horizon[h]), q] <- w[q, ] %*% current[[as.character(horizon[h])]][[1]][, q]
+        }
+      }
+    }
+    
+    if (TRUE) { # `name_values`
+      if (is.matrix(w)) { rownames(w) <- probs; colnames(w) <- ens_models }
+      if (is.vector(nowcast)) { names(nowcast) <- probs }
+      if (is.vector(theta)) { names(theta) <- probs }
+    }
+    
+    result <- list(nowcast = nowcast, weights = w, theta = theta, phi = phi) # wis = tmp_wis_list)
+  }
+  
+  result
+}
+
+##################################################
+##################################################
+##################################################
+
+grid_optim <- function (probs, values, y, q, quant, M, wis = NULL, by = 0.01, theta_lim = c(-10, 10), phi_lim = c(0.75, 1.25), horiz = TRUE, short_grid_search = TRUE, ...) {
+    
+    if (M == 1) { 
+      
+      wis <- t(wis) 
+      pts <- seq(phi_lim[1], phi_lim[2], by = by)
+      rsp <- foreach(i = 1:length(pts)) %dopar% { cost_function(pars = pts[i], probs = probs, values = values, y = y, wis = wis, q = q, quant = quant, horiz = horiz) } 
+      pts <- cbind(pts, unlist(rsp))
+      colnames(pts) <- c("phi", "cost")
+      pos <- which.min(pts[, 2])
+      result <- pts[pos, ]
+      
+    } else {
+      
+      theta <- seq(theta_lim[1], theta_lim[2], length.out = ((4 * 1 / by) + 1)) # length.out = ((2 * 1 / by) + 1)
+      phi <- seq(phi_lim[1], phi_lim[2], by = by)
+      
+      pts <- expand.grid(theta, phi)
+      
+      ##################################################
+      
+      if (short_grid_search) {
+        phi_1 <- which(phi == 1)
+        
+        count  <- 1
+        before <- FALSE
+        after  <- FALSE
+        for (i in 1:((length(phi) - 1) / 2)) {
+          
+          if (count == 1) {
+            # phi = 1
+            tmp_pts_1 <- pts[pts[, 2] == phi[phi_1], ]
+            tmp_rsp_1 <- foreach(i = 1:nrow(tmp_pts_1)) %dopar% { cost_function(pars = unlist(c(tmp_pts_1[i, ])), probs = probs, values = values, y = y, wis = wis, q = q, quant = quant, horiz = horiz) }
+            tmp_min_1 <- min(unlist(tmp_rsp_1))
+            tmp_par_1 <- c(unlist(c(tmp_pts_1[which.min(unlist(tmp_rsp_1)), 1:2])), tmp_min_1)
+            names(tmp_par_1) <- c("theta", "phi", "cost")
+            
+            # before phi = 1
+            tmp_pts_b <- pts[pts[, 2] == phi[phi_1 - i], ]
+            tmp_rsp_b <- foreach(i = 1:nrow(tmp_pts_b)) %dopar% { cost_function(pars = unlist(c(tmp_pts_b[i, ])), probs = probs, values = values, y = y, wis = wis, q = q, quant = quant, horiz = horiz) }
+            tmp_min_b <- min(unlist(tmp_rsp_b))
+            tmp_par_b <- c(unlist(c(tmp_pts_b[which.min(unlist(tmp_rsp_b)), 1:2])), tmp_min_b)
+            names(tmp_par_b) <- c("theta", "phi", "cost")
+            
+            # after  phi = 1
+            tmp_pts_a <- pts[pts[, 2] == phi[phi_1 + i], ]
+            tmp_rsp_a <- foreach(i = 1:nrow(tmp_pts_a)) %dopar% { cost_function(pars = unlist(c(tmp_pts_a[i, ])), probs = probs, values = values, y = y, wis = wis, q = q, quant = quant, horiz = horiz) }
+            tmp_min_a <- min(unlist(tmp_rsp_a))
+            tmp_par_a <- c(unlist(c(tmp_pts_a[which.min(unlist(tmp_rsp_a)), 1:2])), tmp_min_a)
+            names(tmp_par_a) <- c("theta", "phi", "cost")
+            
+            if (tmp_min_1 <= min(tmp_min_b, tmp_min_a)) { before <- FALSE; after <- FALSE; tmp_par <- tmp_par_1 
+            } else if (tmp_min_b <= min(tmp_min_1, tmp_min_a)) { before <- TRUE;  after <- FALSE; tmp_par <- tmp_par_b 
+            } else if (tmp_min_a <= min(tmp_min_1, tmp_min_b)) { before <- FALSE; after <- TRUE;  tmp_par <- tmp_par_a } else { stop("Error 'min'") }
+            
+          } else if ((before == TRUE ) & (after == FALSE)) {
+            
+            tmp_pts_b <- pts[pts[, 2] == phi[phi_1 - i], ]
+            tmp_rsp_b <- foreach(i = 1:nrow(tmp_pts_b)) %dopar% { cost_function(pars = unlist(c(tmp_pts_b[i, ])), probs = probs, values = values, y = y, wis = wis, q = q, quant = quant, horiz = horiz) }
+            tmp_min_b <- min(unlist(tmp_rsp_b))
+            tmp_par_b <- c(unlist(c(tmp_pts_b[which.min(unlist(tmp_rsp_b)), 1:2])), tmp_min_b)
+            names(tmp_par_b) <- c("theta", "phi", "cost")
+            
+            if (tmp_min_b < tmp_par[3]) {
+              tmp_par <- tmp_par_b
+              before  <- TRUE
+              after   <- FALSE
+            } else {
+              before  <- FALSE
+              after   <- FALSE
+            }
+            
+          } else if ((before == FALSE) & (after == TRUE )) {
+            
+            tmp_pts_a <- pts[pts[, 2] == phi[phi_1 + i], ]
+            tmp_rsp_a <- foreach(i = 1:nrow(tmp_pts_a)) %dopar% { cost_function(pars = unlist(c(tmp_pts_a[i, ])), probs = probs, values = values, y = y, wis = wis, q = q, quant = quant, horiz = horiz) }
+            tmp_min_a <- min(unlist(tmp_rsp_a))
+            tmp_par_a <- c(unlist(c(tmp_pts_a[which.min(unlist(tmp_rsp_a)), 1:2])), tmp_min_a)
+            names(tmp_par_a) <- c("theta", "phi", "cost")
+            
+            if (tmp_min_a < tmp_par[3]) {
+              tmp_par <- tmp_par_a
+              before  <- FALSE
+              after   <- TRUE
+            } else {
+              before  <- FALSE
+              after   <- FALSE
+            }
+            
+          } else if ((before == FALSE) & (after == FALSE)) {
+            # DO NOTHING
+          } else { stop("Error") }
+          
+          count <- count + 1
+        }
+        
+        result <- tmp_par
+      } else {
+        
+        rsp <- foreach(i = 1:nrow(pts)) %dopar% { cost_function(pars = unlist(c(pts[i, ])), probs = probs, values = values, y = y, wis = wis, q = q, quant = quant, horiz = horiz) } 
+        
+        pts <- cbind(pts, unlist(rsp))
+        colnames(pts) <- c("theta", "phi", "cost")
+        pos <- which.min(pts$cost)
+        
+        result <- unlist(c(pts[pos, 1:3]))
+      }
+    }
+  
+  result
+}
+
+##################################################
+##################################################
+##################################################
+
+cost_function <- function (pars, probs, values, y, wis, q = 1, quant = FALSE, horiz = TRUE, ...) {
+  
+  if (length(pars) == 1) { # If just one model (post-processing)
+    
+    phi <- pars
+    N <- length(values)
+    ens_wis <- rep(0, N)
+    w <- phi
+    for (n in 1:length(ens_wis)) {
+      ens_wis[n] <- compute_wis(probs = probs, quant = w %*% values[[n]], y = y[n], average = (!quant))[q]  
+    }
+    
+  } else {
+    theta <- pars[1]
+    phi   <- pars[2]
+    
+    if (horiz) {
+      N <- length(values)
+      ens_wis <- rep(0, N)
+    } else { 
+      H <- length(values)
+      N <- length(values[[1]])
+      
+      ens_wis <- rep(0, (N * H))
+    }
+    
+    w <- par_weights_scale(theta = theta, phi = phi, wis = apply(X = wis, MARGIN = 2, FUN = mean))
+    
+    count_H <- 1
+    count_N <- 1
+    for (n in 1:length(ens_wis)) {
+
+      if (!quant) {
+        ens_wis[n] <- compute_wis(probs = probs, quant = w %*% values[[n]], y = y[n], average = (!quant))  
+      } else {
+        if (horiz) {
+          ens_wis[n] <- compute_wis(probs = probs, quant = w %*% values[[n]], y = y[n], average = (!quant))[q]  
+        } else { 
+          ens_wis[n] <- compute_wis(probs = probs, quant = w %*% values[[count_H]][[count_N]], y = y[[count_H]][count_N], average = (!quant))[q]  
+        }
+      }
+      
+      count_N <- count_N + 1
+      if ((n %% N) == 0) {
+        count_H <- count_H + 1  
+        count_N <- 1
+      }
+    }
+    
+  }
+  mean(ens_wis, na.rm = TRUE)
+}
+
+##################################################
+##################################################
+##################################################
+
+par_weights <- function (theta, wis, std_wis = TRUE, ...) {
+  wis <- mpfr(wis, 512)
+  if (std_wis) { wis <- wis / sum(wis) } 
+  result <- as.numeric((exp(- theta * wis)) / (sum(exp(- theta * wis))))
+  
+  result
+}
+
+par_weights_scale <- function (theta, phi, wis, std_wis = TRUE, ...) {
+  wis <- mpfr(wis, 512)
+  if (std_wis) { wis <- wis / sum(wis) } 
+  result <- as.numeric(phi * (exp(- theta * wis)) / (sum(exp(- theta * wis))))
+  
+  result
+}
+
+##################################################
+##################################################
+##################################################
+
+weights_tibble <- function (ensemble, r, models, horizon, probs = c(0.025, 0.100, 0.250, 0.500, 0.750, 0.900, 0.975), skip_first_days = 1, ens_model = NULL, ...) {
+  days <- seq(r[1] + skip_first_days, r[2], by = "1 day")
+  w_hat <- data.frame(forecast_date = as.Date(character()), horizon = character(), model = character(), quant = double(), value = double(), stringsAsFactors = FALSE)
+  w_hat <- as_tibble(w_hat)
+  
+  b <- txtProgressBar(min = 1, max = length(days), initial = 1) 
+  for (k in 1:length(days)) { 
+    dt <- days[k]
+    for (i in 1:length(horizon)) {
+      for (m in 1:length(models)) {
+        for (q in 1:length(probs)) {
+          if (ens_model == "DISW") {
+            value <- ensemble[[as.character(dt)]][[as.character(horizon[i])]]$weights[, q][m]
+          } else {
+            value <- ensemble[[as.character(dt)]][[as.character(horizon[i])]]$weights[q, ][m]
+          }
+          w_hat <- w_hat |> add_row(forecast_date = dt, horizon = as.character(horizon[i]), model = models[m], quant = probs[q], value = value)
+        }
+      }
+    }
+    setTxtProgressBar(b, k)
+  }
+  close(b)
+  
+  w_hat
+}
+
+##################################################
+##################################################
+##################################################
+
+summarize_w_hat <- function (w_hat, hh = NULL, qq = c(0.025, 0.100, 0.250, 0.500, 0.750, 0.900, 0.975), probs = c(0.025, 0.100, 0.250, 0.500, 0.750, 0.900, 0.975), between_0_1 = FALSE, ...) {
+  days <- unique(w_hat$forecast_date)
+  horizon <- unique(w_hat$horizon)
+  models <- unique(w_hat$model)
+  
+  new_w_hat <- data.frame(forecast_date = as.Date(character()), model = character(), value = double(), stringsAsFactors = FALSE)
+  new_w_hat <- as_tibble(new_w_hat)
+  
+  b <- txtProgressBar(min = 1, max = length(days), initial = 1) 
+  
+  for (k in 1:length(days)) {
+    for (m in 1:length(models)) {
+      if (is.null(hh)) {
+        tmp_value <- w_hat |> filter(forecast_date == days[k], model == models[m], quant %in% qq) |> select(value) |> unlist() |> mean(na.rm = TRUE)
+      } else {
+        tmp_value <- w_hat |> filter(forecast_date == days[k], model == models[m], horizon == hh) |> select(value) |> unlist() |> mean(na.rm = TRUE)
+      }
+      new_w_hat <- new_w_hat |> add_row(forecast_date = days[k], model = models[m], value = tmp_value)
+    }
+    
+    tmp_un_values <- new_w_hat |> filter(forecast_date == days[k]) |> select(value) |> unlist()
+    tmp_un_values <- tmp_un_values / sum(tmp_un_values)
+    if (between_0_1) {
+      new_w_hat[new_w_hat$forecast_date == days[k], ]$value <- tmp_un_values  
+    }
+    
+    setTxtProgressBar(b, k)
+  }
+  
+  close(b)
+  
+  new_w_hat
+}
+
+##################################################
+##################################################
+##################################################
+
+format_w_hat <- function (w_hat, aggregate_total = FALSE, indep_quant = FALSE, indep_horiz = TRUE, qqs = c(0.025, 0.5, 0.975), probs = c(0.025, 0.100, 0.250, 0.500, 0.750, 0.900, 0.975), ...) {
+  new_w_hat <- list()
+  
+  if (aggregate_total | indep_quant) {
+    count <- 1
+    for (qq in qqs) {
+      if (aggregate_total) { qq <- probs }
+      new_w_hat[[count]] <- summarize_w_hat(w_hat = w_hat, qq = qq)
+      
+      if (!aggregate_total) {
+        if (count == 1) {
+          new_w_hat_total <- new_w_hat[[count]]
+          new_w_hat_total <- new_w_hat_total |> mutate(quant = qq)
+        } else {
+          tmp <- new_w_hat[[count]]
+          tmp <- tmp |> mutate (quant = qq)
+          new_w_hat_total <- rbind(new_w_hat_total, tmp)
+        }
+      }
+      
+      if (aggregate_total) { break } 
+      count <- count + 1
+    }
+  } else {
+    hhs <- as.numeric(unique(w_hat$horizon))
+    count <- 1
+    
+    for (hh in hhs) {
+      print(paste("Horizon: ", hh, sep = ""))
+      new_w_hat[[count]] <- summarize_w_hat(w_hat = w_hat, hh = hh)
+      
+      if (count == 1) {
+        new_w_hat_total <- new_w_hat[[count]]
+        new_w_hat_total <- new_w_hat_total |> mutate(horizon = hh)
+      } else {
+        tmp <- new_w_hat[[count]]
+        tmp <- tmp |> mutate (horizon = hh)
+        new_w_hat_total <- rbind(new_w_hat_total, tmp)
+      }
+      
+      count <- count + 1
+    }
+  }
+  
+  if (aggregate_total) { 
+    result <- list(new_w_hat = new_w_hat[[1]]) 
+  } else {
+    result <- list(new_w_hat = new_w_hat, new_w_hat_total = new_w_hat_total)
+  }
+  
+  result
+}
+
+##################################################
+##################################################
+##################################################

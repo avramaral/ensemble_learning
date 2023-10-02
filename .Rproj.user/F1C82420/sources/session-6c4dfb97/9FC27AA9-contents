@@ -1,0 +1,85 @@
+library("tidyverse")
+
+##################################################
+##################################################
+
+comp_df <- read_csv(file = paste("OTHER_DATA/complete.csv.gz", sep = ""))
+diff_df <- read_csv(file = paste("OTHER_DATA/missing.csv.gz" , sep = ""))
+
+##################################################
+##################################################
+
+START_DATE_FILT <- "2021-11-22"
+END_DATE_FIL    <- "2022-08-21"
+
+forecast_dates <- seq(from = as.Date(START_DATE_FILT), to = as.Date(END_DATE_FIL), by = "1 day")
+horizon <- -28:0
+targets <- paste(horizon, " day ahead inc hosp", sep = "")
+probs <- c(0.025, 0.100, 0.250, 0.500, 0.750, 0.900, 0.975)
+models <- c("Epiforecasts", "ILM", "KIT", "LMU", "RIVM", "RKI", "SU", "SZ") 
+
+##################################################
+##################################################
+
+locations  <- c("DE")
+age_groups <- c("00+", "00-04", "05-14", "15-34", "35-59", "60-79", "80+")
+
+df_1 <- data.frame(loc = locations, age = age_groups)
+
+locations  <- c("DE-BB", "DE-BE", "DE-BW", "DE-BY", "DE-HB", "DE-HE", "DE-HH", "DE-MV", "DE-NI", "DE-NW", "DE-RP", "DE-SH", "DE-SL", "DE-SN", "DE-ST", "DE-TH")
+age_groups <- c("00+")
+
+df_2 <- data.frame(loc = locations, age = age_groups)
+
+df_loc_age <- rbind(df_1, df_2)
+
+##################################################
+##################################################
+
+tmp_mat <- matrix(data = 1, nrow = length(models), ncol = length(models))
+rownames(tmp_mat) <- models
+colnames(tmp_mat) <- models
+
+for (i in 1:nrow(df_loc_age)) {
+  print(paste(df_loc_age[i, 1], "-", df_loc_age[i, 2], " (", sprintf("%02d", i), "/", sprintf("%02d", nrow(df_loc_age)), ")", sep = ""))
+  
+  tmp_diff_df <- diff_df |> filter(location == df_loc_age[i, 1], age_group == df_loc_age[i, 2])
+  
+  b <- txtProgressBar(min = 1, max = length(forecast_dates), initial = 1)
+  
+  tmp_res <- list()
+  for (d in 1:length(forecast_dates)) {
+    dt <- forecast_dates[d]
+    tmp_res[[as.character(dt)]] <- list()
+    tmp_diff_df_1 <- tmp_diff_df |> filter(forecast_date == dt)
+    for (h in 1:length(horizon)) {
+      hr <- horizon[h]
+      tmp_res[[as.character(dt)]][[as.character(hr)]] <- list()
+      tmp_diff_df_2 <- tmp_diff_df_1 |> filter(target == targets[h])
+      for (q in 1:length(probs)) {
+        qt <- probs[q]
+        tmp_diff_df_3 <- tmp_diff_df_2 |> filter(quantile == qt)
+        
+        if (nrow(tmp_diff_df_3) != 0) {
+          cp_tmp_mat <- tmp_mat
+          for (j in 1:nrow(tmp_diff_df_3)) {
+            m <- tmp_diff_df_3[j, ]$model
+            idx_m <- match(m, models)
+            cp_tmp_mat[idx_m, ] <- 0
+            cp_tmp_mat[, idx_m] <- 0
+          }
+          tmp_res[[as.character(dt)]][[as.character(hr)]][[as.character(qt)]] <- cp_tmp_mat
+        } else {
+          tmp_res[[as.character(dt)]][[as.character(hr)]][[as.character(qt)]] <- tmp_mat
+        }
+      }
+    }
+    setTxtProgressBar(b, d)
+  }
+  close(b)
+  
+  saveRDS(object = tmp_res, file = paste("OTHER_DATA/model_availability_matrix/", df_loc_age[i, 1], "-", df_loc_age[i, 2], ".RDS", sep = ""))
+}
+
+##################################################
+##################################################
