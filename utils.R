@@ -673,12 +673,12 @@ aux_compute_relative_wis <- function (x, ...) {
 ##################################################
 
 compute_weights <- function (wis = NULL, ...) {
-  
+
   wis <- wis + 1e-6
   weights <- 1 / wis
-  
+
   if (is.null(dim(weights))) { # Weights do not depend on time
-    weights <- weights / sum(weights, na.rm = TRUE)  
+    weights <- weights / sum(weights, na.rm = TRUE)
   } else { # Weights depend on time
     if (length(dim(weights)) == 3) { # Weights depend on the quantiles
       for (d in 1:(dim(weights)[1])) {
@@ -692,7 +692,7 @@ compute_weights <- function (wis = NULL, ...) {
       }
     }
   }
-  
+
   weights
 }
 
@@ -742,7 +742,7 @@ create_new_tibble <- function (...) {
 ##################################################
 ##################################################
 
-compute_ensemble <- function (ens_method, y, y_current, values, current, ens_models = NULL, weights = NULL, k = NULL, lower = -10, upper = 10, quant = TRUE, horiz = TRUE, probs = c(0.025, 0.100, 0.250, 0.500, 0.750, 0.900, 0.975), short_grid_search = TRUE, by = 0.01, ...) {
+compute_ensemble <- function (ens_method, y, y_current, values, current, ens_models = NULL, weights = NULL, k = NULL, lower = -10, upper = 10, quant = TRUE, horiz = TRUE, probs = c(0.025, 0.100, 0.250, 0.500, 0.750, 0.900, 0.975), short_grid_search = TRUE, by = 0.01, n_ensemble_models = NULL, unweighted_method = NULL, ...) {
   m <- ens_method[1]
   
   if (m == "wis") {
@@ -750,6 +750,8 @@ compute_ensemble <- function (ens_method, y, y_current, values, current, ens_mod
   } else if (m == "pinball") {
     # if (!horiz) { current <- list(current) } 
     res <- ensemble_pinball(y = y, y_current = y_current, values = values, current = current, ens_models = ens_models, lower = lower, upper = upper, quant = quant, horiz = horiz, probs = probs, short_grid_search = short_grid_search, by = by)
+  } else if (m == "ranked_unweighted") {
+    res <- ensemble_ranked_unweighted(y = y, y_current = y_current, values = values, current = current, n_ensemble_models = n_ensemble_models, unweighted_method = unweighted_method, quant = quant, horiz = horiz)
   } else {
     stop("Choose a valid ensemble method.")
   }
@@ -764,20 +766,48 @@ compute_ensemble <- function (ens_method, y, y_current, values, current, ens_mod
 ensemble_wis <- function (current, weights, k = NULL,...) {
   
   if (length(dim(weights)) == 3) { # Weights depend on the quantiles
-    res <- rep(0, length(probs))
-    for (q in 1:length(probs)) {
-      idx_missing <- which(is.na(current[, q]))
-      if (length(idx_missing) == 0) { idx_missing <- -(1:length(current[, q])) }
-      tmp_current <- current[, q][-idx_missing]
-      tmp_weights <- weights[k, , q][-idx_missing]
-      tmp_weights <- tmp_weights / sum(tmp_weights)
-      res[q] <- tmp_weights %*% tmp_current
+    
+    if (!is.list(current)) { # National level
       
-      # Format weights to export
-      weights[k, , q][idx_missing] <- 0
-      weights[k, , q] <- weights[k, , q] / sum(weights[k, , q])
+      res <- rep(0, length(probs))
+      for (q in 1:length(probs)) {
+        idx_missing <- which(is.na(current[, q]))
+        if (length(idx_missing) == 0) { idx_missing <- -(1:length(current[, q])) }
+        tmp_current <- current[, q][-idx_missing]
+        tmp_weights <- weights[k, , q][-idx_missing]
+        tmp_weights <- tmp_weights / sum(tmp_weights)
+        res[q] <- tmp_weights %*% tmp_current
+        
+        # Format weights to export
+        weights[k, , q][idx_missing] <- 0
+        weights[k, , q] <- weights[k, , q] / sum(weights[k, , q])
+      }
+      
+    } else { # Stratified analysis
+      
+      n_strata <- length(current)
+      res <- matrix(data = 0, nrow = n_strata, ncol = length(probs))
+      
+      for (i in 1:n_strata) {
+        for (q in 1:length(probs)) {
+          idx_missing <- which(is.na(current[[i]][, q]))
+          if (length(idx_missing) == 0) { idx_missing <- -(1:length(current[[i]][, q])) }
+          tmp_current <- current[[i]][, q][-idx_missing]
+          tmp_weights <- weights[k, , q][-idx_missing]
+          tmp_weights <- tmp_weights / sum(tmp_weights)
+          res[i, q] <- tmp_weights %*% tmp_current
+        }
+      }
+      for (q in 1:length(probs)) {
+        # Format weights to export
+        weights[k, , q][idx_missing] <- 0
+        weights[k, , q] <- weights[k, , q] / sum(weights[k, , q])
+      }
+      
     }
+    
     weights <- weights[k, , ]
+    
   } else { # Weights do not depend on the quantiles # UPDATE IT TO ACCOUNT FOR POSSIBLY MISSING NOWCASTS
     if (is.null(nrow(weights))) {
       res <- weights %*% current
@@ -806,9 +836,25 @@ input_new_data <- function (new_data, ensemble, ens_method, h, state, age, day, 
       if (class(value)[1] == "numeric") {
         value <- value[q]
       } else  {
-        value <- value[1, q]
+        if (nrow(value) == 1) {
+          value <- value[1, q]
+        } else {
+          value <- value[ , q]
+        }
       }
-      new_data <- new_data |> add_row(location = state, age_group = age, forecast_date = dt, target_end_date = (dt + h), target = paste(h, " day ahead inc hosp", sep = ""), type = "quantile", quantile =  probs[q], value = value, pathogen = "COVID-19", model = name_method, retrospective = FALSE)
+      if (length(value) == 1) {
+        new_data <- new_data |> add_row(location = state, age_group = age, forecast_date = dt, target_end_date = (dt + h), target = paste(h, " day ahead inc hosp", sep = ""), type = "quantile", quantile =  probs[q], value = value, pathogen = "COVID-19", model = name_method, retrospective = FALSE)
+      } else {
+        for (i in 1:length(value)) {
+          if (length(value) == 16) {
+            new_data <- new_data |> add_row(location = state[i], age_group = age, forecast_date = dt, target_end_date = (dt + h), target = paste(h, " day ahead inc hosp", sep = ""), type = "quantile", quantile =  probs[q], value = value[i], pathogen = "COVID-19", model = name_method, retrospective = FALSE)
+          } else if (length(value == 6)) {
+            new_data <- new_data |> add_row(location = state, age_group = age[i], forecast_date = dt, target_end_date = (dt + h), target = paste(h, " day ahead inc hosp", sep = ""), type = "quantile", quantile =  probs[q], value = value[i], pathogen = "COVID-19", model = name_method, retrospective = FALSE)
+          } else {
+            stop("Error when adding a new row.")
+          }
+        } 
+      }
     }
   } else {
     for (i in 1:length(horizon)) {
@@ -818,7 +864,6 @@ input_new_data <- function (new_data, ensemble, ens_method, h, state, age, day, 
       }
     }
   }
-  
   
   new_data
 }
@@ -835,21 +880,254 @@ ensemble_pinball <- function (y, y_current, values, current, ens_models = NULL, 
   # N: number of day points
   # M: number of models
   
-  if (horiz) { # Weights depend on the horizons
+  if (!is.list(y_current)) { # National level
+    if (horiz) { # Weights depend on the horizons
+      N <- length(values)
+      M <- nrow(values[[1]])
+      if (is.null(M)) {
+        M <- 1
+      }
+    } else { # Weights do not depend on the horizons
+      H <- length(values)
+      N <- length(values[[1]])
+      M <- nrow(values[[1]][[1]])
+    }
+    
+    if (!quant) { # Weights do not depend on the quantiles
+      wis <- matrix(data = 0, nrow = N, ncol = M)
+    } else { # Weights depend on the quantiles
+      if (horiz) {
+        wis <- array(data = 0, dim = c(N, M, length(probs)))
+      } else { 
+        wis <- array(data = 0, dim = c((N * H), M, length(probs)))
+      }
+    }
+    
+    # Compute the score (WIS)
+    if (horiz) {
+      for (n in 1:N) {
+        if (!quant) { # Missing implementation for more than one model
+          wis[n, ] <- apply(X = values[[n]], MARGIN = 1, FUN = compute_wis, probs = probs, y = y[n], average = (!quant))  
+        } else {
+          if (M == 1) { 
+            wis[n, , ] <- compute_wis(probs = probs, quant = values[[n]], y = y[n], average = (!quant))
+          } else {
+            wis[n, , ] <- apply(X = values[[n]], MARGIN = 1, FUN = compute_wis, probs = probs, y = y[n], average = (!quant)) |> t() 
+          }
+        }
+      }
+    } else { 
+      horizon <- as.numeric(names(y))
+      
+      count <- 1
+      for (n in 1:N) {
+        for (h in 1:H) {
+          wis[count, , ] <- apply(X = values[[as.character(horizon[h])]][[n]], MARGIN = 1, FUN = compute_wis, probs = probs, y = y[[as.character(horizon[h])]][n], average = (!quant)) |> t()
+          count <- count + 1
+        }
+      }
+    }
+    
+    ##################################################
+    
+    # Optimization routine
+    if (sum(wis, na.rm = TRUE) == 0) {
+      theta <- 0
+    } else {
+      if (!quant) {
+        # To be implemented
+        stop("To be implemented.")
+      } else {
+        
+        theta <- rep(x = 0, times = length(probs))
+        phi <- rep(x = 0, times = length(probs))
+        
+        for (q in 1:length(probs)) {
+          tmp_wis <- wis[, , q]
+          if (is.null(dim(tmp_wis))) {
+            tmp_wis <- t(as.matrix(tmp_wis)) 
+          }
+          est_pars <- grid_optim(probs = probs, values = values, y = y, q = q, quant = quant, M = M, wis = tmp_wis, by = by, theta_lim = c(lower, upper), horiz = horiz, short_grid_search = short_grid_search)
+          if (M == 1) {
+            phi[q] <- est_pars[1]
+          } else {
+            theta[q] <- est_pars[1]
+            phi[q]   <- est_pars[2] 
+          }
+        }
+      }
+    }
+
+    ##################################################
+    
+    # Compute the new weights and nowcasts
+    if (!quant) {
+      w <- par_weights(theta = theta, wis = apply(X = wis, MARGIN = 2, FUN = mean))
+      result <- list(nowcast = w %*% current, weights = w, theta = theta)
+    } else {
+      w <- matrix(data = 0, nrow = length(probs), ncol = M)
+      if (horiz) {
+        nowcast <- rep(x = 0, times = length(probs))
+      } else {
+        nowcast <- matrix(data = 0, nrow = H, ncol = length(probs))
+        rownames(nowcast) <- horizon
+      }
+      tmp_wis_list <- list()
+      for (q in 1:length(probs)) {
+        tmp_wis <- wis[, , q]
+        if (is.null(dim(tmp_wis))) {
+          tmp_wis <- t(as.matrix(tmp_wis)) 
+        }
+        tmp_wis_list[[q]] <- apply(X = tmp_wis, MARGIN = 2, FUN = mean)
+        if (M == 1) {
+          w[q, ] <- phi[q]
+        } else {
+          w[q, ] <- par_weights_scale(theta = theta[q], phi = phi[q], wis = apply(X = tmp_wis, MARGIN = 2, FUN = mean))
+        }
+        if (horiz) {
+          if (M == 1) {
+            nowcast[q] <- w[q, ] %*% current[  q]
+          } else {
+            nowcast[q] <- w[q, ] %*% current[, q]
+          }
+        } else {
+          for (h in 1:H) {
+            nowcast[as.character(horizon[h]), q] <- w[q, ] %*% current[[as.character(horizon[h])]][[1]][, q]
+          }
+        }
+      }
+      
+      if (TRUE) {
+        if (is.matrix(w)) { rownames(w) <- probs; colnames(w) <- ens_models }
+        if (is.vector(nowcast)) { names(nowcast) <- probs }
+        if (is.vector(theta)) { names(theta) <- probs }
+      }
+      
+      result <- list(nowcast = nowcast, weights = w, theta = theta, phi = phi) 
+    }
+    
+    ##################################################
+    
+  } else { # Stratified analysis (do not implemented if the weights do not depend on the horizons)
+    if (horiz) {
+      S <- length(values) # Number of strata
+      N <- length(values[[1]])
+      M <- nrow(values[[1]][[1]])
+      if (is.null(M)) {
+        M <- 1
+      }
+    } else {
+      # TBD
+      stop("Not implemented.")
+    }
+    
+    wis <- list()
+    for (s in 1:S) {
+      wis[[s]] <- array(data = 0, dim = c(N, M, length(probs)))
+    }
+    
+    # Compute the score (WIS)
+    for (s in 1:S) {
+      for (n in 1:N) {
+        if (M == 1) { # The post-processing implementation for stratified analysis is incomplete 
+          wis[[s]][n, , ] <- compute_wis(probs = probs, quant = values[[s]][[n]], y = y[[s]][n], average = (!quant))
+        } else {
+          wis[[s]][n, , ] <- apply(X = values[[s]][[n]], MARGIN = 1, FUN = compute_wis, probs = probs, y = y[[s]][n], average = (!quant)) |> t() 
+        }
+      }
+    }
+    
+    # Optimization routine
+    if (sum(unlist(wis), na.rm = TRUE) == 0) {
+      theta <- 0
+    } else {
+  
+      theta <- rep(x = 0, times = length(probs))
+      phi <- rep(x = 0, times = length(probs))
+      
+      for (q in 1:length(probs)) {
+        
+        tmp_wis <- list()
+        for (s in 1:S) {
+          tmp_wis[[s]] <- wis[[s]][, , q]
+          
+          if (is.null(dim(tmp_wis[[s]]))) {
+            tmp_wis[[s]] <- t(as.matrix(tmp_wis[[s]])) 
+          }
+        }
+
+        est_pars <- grid_optim(probs = probs, values = values, y = y, q = q, quant = quant, M = M, wis = tmp_wis, by = by, theta_lim = c(lower, upper), horiz = horiz, short_grid_search = short_grid_search)
+        if (M == 1) {
+          phi[q] <- est_pars[1]
+        } else {
+          theta[q] <- est_pars[1]
+          phi[q]   <- est_pars[2] 
+        }
+      }
+    }
+
+
+    # Compute the new weights and nowcasts
+    w <- matrix(data = 0, nrow = length(probs), ncol = M)
+    nowcast <- matrix(data = 0, nrow = S, ncol = length(probs))
+  
+    wis <- elementwise_avg_3d(wis) # Averaging over the strata
+    
+    tmp_wis_list <- list()
+    for (q in 1:length(probs)) {
+      tmp_wis <- wis[, , q]
+      if (is.null(dim(tmp_wis))) { tmp_wis <- t(as.matrix(tmp_wis)) }
+      tmp_wis_list[[q]] <- apply(X = tmp_wis, MARGIN = 2, FUN = mean)
+      if (M == 1) {
+        w[q, ] <- phi[q]
+      } else {
+        w[q, ] <- par_weights_scale(theta = theta[q], phi = phi[q], wis = apply(X = tmp_wis, MARGIN = 2, FUN = mean))
+      }
+    }
+    
+    for (s in 1:S) {
+      for (q in 1:length(probs)) {
+        if (M == 1) {
+          nowcast[s, q] <- w[q, ] %*% current[[s]][  q]
+        } else {
+          nowcast[s, q] <- w[q, ] %*% current[[s]][, q]
+        }
+      }
+    }
+    
+    if (TRUE) { 
+      if (is.matrix(w)) { rownames(w) <- probs; colnames(w) <- ens_models }
+      if (is.vector(nowcast)) { names(nowcast) <- probs } else if (is.matrix(nowcast)) { colnames(nowcast) <- probs }
+      if (is.vector(theta)) { names(theta) <- probs }
+    }
+    
+    result <- list(nowcast = nowcast, weights = w, theta = theta, phi = phi) 
+  }
+  
+  result
+}
+
+##################################################
+##################################################
+##################################################
+
+ensemble_ranked_unweighted <- function (y, y_current, values, current, n_ensemble_models, unweighted_method = "mean", ...) {
+  
+  if (horiz) { 
     N <- length(values)
     M <- nrow(values[[1]])
     if (is.null(M)) {
       M <- 1
     }
-  } else { # Weights do not depend on the horizons
+  } else { 
     H <- length(values)
     N <- length(values[[1]])
     M <- nrow(values[[1]][[1]])
   }
   
-  if (!quant) { # Weights do not depend on the quantiles
+  if (!quant) { 
     wis <- matrix(data = 0, nrow = N, ncol = M)
-  } else { # Weights depend on the quantiles
+  } else { 
     if (horiz) {
       wis <- array(data = 0, dim = c(N, M, length(probs)))
     } else { 
@@ -857,7 +1135,7 @@ ensemble_pinball <- function (y, y_current, values, current, ens_models = NULL, 
     }
   }
   
-  # Compute the score (WIS)
+  # Compute WIS
   if (horiz) {
     for (n in 1:N) {
       if (!quant) { # Missing implementation for more than one model
@@ -880,86 +1158,60 @@ ensemble_pinball <- function (y, y_current, values, current, ens_models = NULL, 
         count <- count + 1
       }
     }
-  }
+  } 
   
-  ##################################################
-  
-  # Optimization routine
-  if (sum(wis, na.rm = TRUE) == 0) {
-    theta <- 0
-  } else {
-    if (!quant) {
-      # To be implemented
-      stop("To be implemented.")
-    } else {
-
-      theta <- rep(x = 0, times = length(probs))
-      phi <- rep(x = 0, times = length(probs))
-      
-      for (q in 1:length(probs)) {
-        tmp_wis <- wis[, , q]
-        if (is.null(dim(tmp_wis))) {
-          tmp_wis <- t(as.matrix(tmp_wis)) 
-        }
-        est_pars <- grid_optim(probs = probs, values = values, y = y, q = q, quant = quant, M = M, wis = tmp_wis, by = by, theta_lim = c(lower, upper), horiz = horiz, short_grid_search = short_grid_search)
-        if (M == 1) {
-          phi[q] <- est_pars[1]
-        } else {
-          theta[q] <- est_pars[1]
-          phi[q]   <- est_pars[2] 
-        }
-      }
-    }
-  }
-  
-  ##################################################
-  
-  # Compute the new weights and nowcasts
+  # Compute weights
   if (!quant) {
-    w <- par_weights(theta = theta, wis = apply(X = wis, MARGIN = 2, FUN = mean))
-    result <- list(nowcast = w %*% current, weights = w, theta = theta)
+    # TBD
+    stop("To be implemented.")
   } else {
+    wis <- apply(X = wis, MARGIN = c(2, 3), FUN = mean)
     w <- matrix(data = 0, nrow = length(probs), ncol = M)
-    if (horiz) {
-      nowcast <- rep(x = 0, times = length(probs))
-    } else {
-      nowcast <- matrix(data = 0, nrow = H, ncol = length(probs))
-      rownames(nowcast) <- horizon
-    }
-    tmp_wis_list <- list()
+    w <- t(w)
+    
     for (q in 1:length(probs)) {
-      tmp_wis <- wis[, , q]
-      if (is.null(dim(tmp_wis))) {
-        tmp_wis <- t(as.matrix(tmp_wis)) 
-      }
-      tmp_wis_list[[q]] <- apply(X = tmp_wis, MARGIN = 2, FUN = mean)
-      if (M == 1) {
-        w[q, ] <- phi[q]
-      } else {
-        w[q, ] <- par_weights_scale(theta = theta[q], phi = phi[q], wis = apply(X = tmp_wis, MARGIN = 2, FUN = mean))
-      }
-      if (horiz) {
-        if (M == 1) {
-          nowcast[q] <- w[q, ] %*% current[  q]
-        } else {
-          nowcast[q] <- w[q, ] %*% current[, q]
-        }
-      } else {
-        for (h in 1:H) {
-          nowcast[as.character(horizon[h]), q] <- w[q, ] %*% current[[as.character(horizon[h])]][[1]][, q]
-        }
-      }
+      x <- wis[, q]
+      min_pos <- which(x %in% sort(x)[1:n_ensemble_models])
+      w[min_pos, q] <- 1
+      w[min_pos, q] <- w[min_pos, q] / sum(w[min_pos, q])
     }
     
-    if (TRUE) { # `name_values`
-      if (is.matrix(w)) { rownames(w) <- probs; colnames(w) <- ens_models }
-      if (is.vector(nowcast)) { names(nowcast) <- probs }
-      if (is.vector(theta)) { names(theta) <- probs }
-    }
-    
-    result <- list(nowcast = nowcast, weights = w, theta = theta, phi = phi) # wis = tmp_wis_list)
+    w <- t(w)
   }
   
+  # Compute nowcasts
+  if (horiz) {
+    nowcast <- rep(x = 0, times = length(probs))
+  } else {
+    nowcast <- matrix(data = 0, nrow = H, ncol = length(probs))
+    rownames(nowcast) <- horizon
+  }
+  
+  for (q in 1:length(probs)) {
+    if (horiz) {
+      if (unweighted_method == "mean") {
+        nowcast[q] <- mean(current[, q][which(w[q, ] > 0)], na.rm = TRUE)
+      } else {
+        nowcast[q] <- median(current[, q][which(w[q, ] > 0)], na.rm = TRUE)
+      }
+    } else {
+      for (h in 1:H) {
+        if (unweighted_method == "mean") {
+          tmp_nowcast <- mean(current[[as.character(horizon[h])]][[1]][, q][which(w[q, ] > 0)], na.rm = TRUE)
+        } else {
+          tmp_nowcast <- median(current[[as.character(horizon[h])]][[1]][, q][which(w[q, ] > 0)], na.rm = TRUE)
+        }
+        nowcast[as.character(horizon[h]), q] <- tmp_nowcast
+      }
+    }
+  }
+  
+  if (TRUE) {
+    if (is.matrix(w)) { rownames(w) <- probs; colnames(w) <- ens_models }
+    if (is.vector(nowcast)) { names(nowcast) <- probs }
+  }
+  
+  result <- list(nowcast = nowcast, weights = w) 
   result
 }
 
@@ -1083,56 +1335,117 @@ grid_optim <- function (probs, values, y, q, quant, M, wis = NULL, by = 0.01, th
 ##################################################
 ##################################################
 
-# pars = unlist(c(tmp_pts_1[250, ]))
+elementwise_avg <- function (my_list, ...) {
+  max_length <- max(sapply(my_list, length))
+  result <- numeric(length = max_length)
+  
+  for (i in 1:max_length) {
+    result[i] <- mean(sapply(my_list, function(x) ifelse(i <= length(x), x[i], NA)))
+  }
+  
+  result
+}
+
+elementwise_avg_3d <- function (my_list, ...) {
+  max_dim1 <- max(sapply(my_list, function(x) dim(x)[1]))
+  max_dim2 <- max(sapply(my_list, function(x) dim(x)[2]))
+  max_dim3 <- max(sapply(my_list, function(x) dim(x)[3]))
+  
+  result <- array(NA, dim = c(max_dim1, max_dim2, max_dim3))
+  
+  for (i in 1:max_dim1) {
+    for (j in 1:max_dim2) {
+      for (k in 1:max_dim3) {
+        result[i, j, k] <- mean(sapply(my_list, function(x) {
+          if (i <= dim(x)[1] && j <= dim(x)[2] && k <= dim(x)[3]) {
+            x[i, j, k]
+          } else {
+            NA
+          }
+        }))
+      }
+    }
+  }
+  
+  result
+}
+
 cost_function <- function (pars, probs, values, y, wis, q = 1, quant = FALSE, horiz = TRUE, ...) {
   
-  if (length(pars) == 1) { # If just one model (post-processing)
-    
-    phi <- pars
-    N <- length(values)
-    ens_wis <- rep(0, N)
-    w <- phi
-    for (n in 1:length(ens_wis)) {
-      ens_wis[n] <- compute_wis(probs = probs, quant = w %*% values[[n]], y = y[n], average = (!quant))[q]  
-    }
-    
-  } else {
-    theta <- pars[1]
-    phi   <- pars[2]
-    
-    if (horiz) {
+  if (!is.list(wis)) { # National level
+
+    if (length(pars) == 1) { # If just one model (post-processing)
+      
+      phi <- pars
       N <- length(values)
       ens_wis <- rep(0, N)
-    } else { 
-      H <- length(values)
-      N <- length(values[[1]])
+      w <- phi
+      for (n in 1:length(ens_wis)) {
+        ens_wis[n] <- compute_wis(probs = probs, quant = w %*% values[[n]], y = y[n], average = (!quant))[q]  
+      }
       
-      ens_wis <- rep(0, (N * H))
-    }
-    
-    w <- par_weights_scale(theta = theta, phi = phi, wis = apply(X = wis, MARGIN = 2, FUN = mean))
-    
-    count_H <- 1
-    count_N <- 1
-    for (n in 1:length(ens_wis)) {
-
-      if (!quant) {
-        ens_wis[n] <- compute_wis(probs = probs, quant = w %*% values[[n]], y = y[n], average = (!quant))  
-      } else {
-        if (horiz) {
-          ens_wis[n] <- compute_wis(probs = probs, quant = w %*% values[[n]], y = y[n], average = (!quant))[q]  
-        } else { 
-          ens_wis[n] <- compute_wis(probs = probs, quant = w %*% values[[count_H]][[count_N]], y = y[[count_H]][count_N], average = (!quant))[q]  
+    } else {
+      theta <- pars[1]
+      phi   <- pars[2]
+      
+      if (horiz) {
+        N <- length(values)
+        ens_wis <- rep(0, N)
+      } else { 
+        H <- length(values)
+        N <- length(values[[1]])
+        
+        ens_wis <- rep(0, (N * H))
+      }
+      
+      w <- par_weights_scale(theta = theta, phi = phi, wis = apply(X = wis, MARGIN = 2, FUN = mean))
+      
+      count_H <- 1
+      count_N <- 1
+      for (n in 1:length(ens_wis)) {
+        
+        if (!quant) {
+          ens_wis[n] <- compute_wis(probs = probs, quant = w %*% values[[n]], y = y[n], average = (!quant))  
+        } else {
+          if (horiz) {
+            ens_wis[n] <- compute_wis(probs = probs, quant = w %*% values[[n]], y = y[n], average = (!quant))[q]  
+          } else { 
+            ens_wis[n] <- compute_wis(probs = probs, quant = w %*% values[[count_H]][[count_N]], y = y[[count_H]][count_N], average = (!quant))[q]  
+          }
+        }
+        
+        count_N <- count_N + 1
+        if ((n %% N) == 0) {
+          count_H <- count_H + 1  
+          count_N <- 1
         }
       }
+    }
+  } else { # Stratified analysis
+    
+    if (length(pars) == 1) { 
+      # TBD
+      stop("Cost function for post-processing for stratified analysis has not been implemented yet.")
+    } else {
+      theta <- pars[1]
+      phi   <- pars[2]
       
-      count_N <- count_N + 1
-      if ((n %% N) == 0) {
-        count_H <- count_H + 1  
-        count_N <- 1
+      S <- length(values)
+      N <- length(values[[1]])
+      ens_wis <- matrix(0, S, N)
+
+      w <- list()
+      for (s in 1:S) {
+        w[[s]] <- par_weights_scale(theta = theta, phi = phi, wis = apply(X = wis[[s]], MARGIN = 2, FUN = mean))
+      }
+      w <- elementwise_avg(w)
+      
+      for (s in 1:S) {
+        for (n in 1:ncol(ens_wis)) {
+          ens_wis[s, n] <- compute_wis(probs = probs, quant = w %*% values[[s]][[n]], y = y[[s]][n], average = (!quant))[q]  
+        }
       }
     }
-    
   }
   
   mean(ens_wis, na.rm = TRUE)
