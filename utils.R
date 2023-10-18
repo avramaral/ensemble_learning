@@ -135,6 +135,55 @@ retrieve_data <- function (data, truth_data, naive_ensemble, models, horizon, st
 ##################################################
 ##################################################
 
+reparameterize_model <- function (y, y_current, values, current, baseline, ...) {
+  
+  new_y <- list()
+  new_y_current <- list()
+  new_values  <- list()
+  new_current <- list()
+  
+  for_dates <- names(values)
+  n_days    <- length(for_dates)
+  
+  pb <- txtProgressBar(min = 1, max = n_days, initial = 1) 
+  for (n in 1:n_days) {
+    
+    d <- for_dates[n] 
+    horizon <- as.numeric(names(values[[as.character(d)]]))
+    
+    new_y[[as.character(d)]]         <- list()
+    new_y_current[[as.character(d)]] <- list()
+    new_values[[as.character(d)]]    <- list()
+    new_current[[as.character(d)]]   <- list()
+    
+    for (h in horizon) {
+    
+      new_values[[as.character(d)]][[as.character(h)]]  <- list()
+      new_current[[as.character(d)]][[as.character(h)]] <- list()
+      
+      avlb_training_size <- length(values[[as.character(d)]][[as.character(h)]])
+      for (i in 1:avlb_training_size) {
+        b <- baseline %>% filter(forecast_date == (as.Date(d) - i), target == paste(h, " day ahead inc hosp", sep = ""), type == "quantile") %>% select(value) %>% c() %>% unlist() %>% unname()
+        new_values[[as.character(d)]][[as.character(h)]][[i]] <- values[[as.character(d)]][[as.character(h)]][[i]] - b
+      
+        new_y[[as.character(d)]][[as.character(h)]][i] <- y[[as.character(d)]][[as.character(h)]][i] - b[4]
+      }
+      
+      b <- baseline %>% filter(forecast_date == d, target == paste(h, " day ahead inc hosp", sep = ""), type == "quantile") %>% select(value) %>% c() %>% unlist() %>% unname()
+      new_current[[as.character(d)]][[as.character(h)]][[1]] <- current[[as.character(d)]][[as.character(h)]][[1]] - b
+      
+      new_y_current[[as.character(d)]][[as.character(h)]] <- y_current[[as.character(d)]][[as.character(h)]] - b[4]
+    }
+    setTxtProgressBar(pb, n)
+  }
+  close(pb)
+  
+  list(y = new_y, y_current = new_y_current, values = new_values, current = new_current)
+}
+
+##################################################
+##################################################
+##################################################
 
 select_real_data <- function (naive_ensemble, truth_data, dt, horizon, n_forecast = 28, stable = 40, training_size = 90, method = "Median", current = FALSE, ...) {
   
@@ -145,6 +194,8 @@ select_real_data <- function (naive_ensemble, truth_data, dt, horizon, n_forecas
       real_data <- naive_ensemble |> filter(forecast_date == dt, target_end_date == target_end_date_value, quantile == 0.5, model == method) |> select(value) |> unlist()
     } else if (method == "Mean") {
       real_data <- naive_ensemble |> filter(forecast_date == dt, target_end_date == target_end_date_value, is.na(quantile), model == method) |> select(value) |> unlist()
+    } else if (method == "all_quant") {
+      real_data <- naive_ensemble |> filter(forecast_date == dt, target_end_date == target_end_date_value, !is.na(quantile), model == "Median") |> select(value) |> unlist()
     } else { stop("Invalid method.") }
     
   } else {
@@ -152,46 +203,74 @@ select_real_data <- function (naive_ensemble, truth_data, dt, horizon, n_forecas
     number_days <- as.numeric((dt - r[1]))
     number_days <- min(number_days, training_size)
     
-    real_data <- rep(0, number_days)
+    if (method == "all_quant") {
+      real_data <- matrix(0, number_days, length(probs))
+    } else {
+      real_data <- rep(0, number_days)
+    }
     
     for (n in 1:number_days) {
       
       target_end_date_value = dt - n + horizon
       
       if ((- n + horizon) < (- stable)) {
-        real_data[n] <- truth_data[truth_data$date == target_end_date_value, ]$truth
+        if (method != "all_quant") {
+          real_data[n] <- truth_data[truth_data$date == target_end_date_value, ]$truth
+        } else {
+          real_data[n, ] <- rep(truth_data[truth_data$date == target_end_date_value, ]$truth, length(probs))
+        }
+        
       } else if ((- n + horizon) < (- n_forecast)) {
         if (method == "Median") {
           tmp_real_data <- naive_ensemble |> filter(forecast_date == dt - n + (n_forecast + horizon), target_end_date == target_end_date_value, quantile == 0.5, model == method) |> select(value) |> unlist()
         } else if (method == "Mean") {
-          tmp_real_data <- naive_ensemble |> filter(forecast_date == dt - n + (n_forecast + horizon), target_end_date == target_end_date_value, is.na(quantile), model == method) |> select(value) |> unlist()
+          tmp_real_data <- naive_ensemble |> filter(forecast_date == dt - n + (n_forecast + horizon), target_end_date == target_end_date_value,  is.na(quantile), model == method) |> select(value) |> unlist()
+        } else if (method == "all_quant") {
+          tmp_real_data <- naive_ensemble |> filter(forecast_date == dt - n + (n_forecast + horizon), target_end_date == target_end_date_value, !is.na(quantile), model == "Median") |> select(value) |> unlist()
         }
         inner_count <- 0
-        while ((length(tmp_real_data) == 0) & (inner_count < 10)) {
+        while (((length(tmp_real_data) != 1) & (length(tmp_real_data) != 7)) & (inner_count < 10)) {
           inner_count <- inner_count + 1
           if (method == "Median") {
             tmp_real_data <- naive_ensemble |> filter(forecast_date == dt - n + (n_forecast + horizon) + inner_count, target_end_date == target_end_date_value + inner_count, quantile == 0.5, model == method) |> select(value) |> unlist()
           } else if (method == "Mean") {
-            tmp_real_data <- naive_ensemble |> filter(forecast_date == dt - n + (n_forecast + horizon) + inner_count, target_end_date == target_end_date_value + inner_count, is.na(quantile), model == method) |> select(value) |> unlist()
+            tmp_real_data <- naive_ensemble |> filter(forecast_date == dt - n + (n_forecast + horizon) + inner_count, target_end_date == target_end_date_value + inner_count,  is.na(quantile), model == method) |> select(value) |> unlist()
+          } else if (method == "all_quant") {
+            tmp_real_data <- naive_ensemble |> filter(forecast_date == dt - n + (n_forecast + horizon) + inner_count, target_end_date == target_end_date_value + inner_count, !is.na(quantile), model == "Median") |> select(value) |> unlist()
           }
+        } 
+        if (inner_count >= 10) { stop("Too many errors in a row.") }
+        if (method != "all_quant") {
+          real_data[n] <- tmp_real_data
+        } else {
+          real_data[n, ] <- tmp_real_data
         }
-        real_data[n] <- tmp_real_data
+        
       } else {
         if (method == "Median") {
           tmp_real_data <- naive_ensemble |> filter(forecast_date == dt, target_end_date == target_end_date_value, quantile == 0.5, model == method) |> select(value) |> unlist()
         } else if (method == "Mean") {
-          tmp_real_data <- naive_ensemble |> filter(forecast_date == dt, target_end_date == target_end_date_value, is.na(quantile), model == method) |> select(value) |> unlist()
+          tmp_real_data <- naive_ensemble |> filter(forecast_date == dt, target_end_date == target_end_date_value,  is.na(quantile), model == method) |> select(value) |> unlist()
+        } else if (method == "all_quant") {
+          tmp_real_data <- naive_ensemble |> filter(forecast_date == dt, target_end_date == target_end_date_value, !is.na(quantile), model == "Median") |> select(value) |> unlist()
         }
         inner_count <- 0
-        while ((length(tmp_real_data) == 0) & (inner_count < 10)) {
+        while (((length(tmp_real_data) != 1) & (length(tmp_real_data) != 7)) & (inner_count < 10)) { 
           inner_count <- inner_count + 1
           if (method == "Median") {
             tmp_real_data <- naive_ensemble |> filter(forecast_date == dt + inner_count, target_end_date == target_end_date_value + inner_count, quantile == 0.5, model == method) |> select(value) |> unlist()
           } else if (method == "Mean") {
-            tmp_real_data <- naive_ensemble |> filter(forecast_date == dt + inner_count, target_end_date == target_end_date_value + inner_count, is.na(quantile), model == method) |> select(value) |> unlist()
+            tmp_real_data <- naive_ensemble |> filter(forecast_date == dt + inner_count, target_end_date == target_end_date_value + inner_count,  is.na(quantile), model == method) |> select(value) |> unlist()
+          } else if (method == "all_quant") {
+            tmp_real_data <- naive_ensemble |> filter(forecast_date == dt + inner_count, target_end_date == target_end_date_value + inner_count, !is.na(quantile), model == "Median") |> select(value) |> unlist()
           }
+        } 
+        if (inner_count >= 10) { stop("Too many errors in a row.") }
+        if (method != "all_quant") {
+          real_data[n] <- tmp_real_data
+        } else {
+          real_data[n, ] <- tmp_real_data
         }
-        real_data[n] <- tmp_real_data
       }
     }
   }
@@ -329,6 +408,22 @@ compute_wis <- function (probs, quant, y, average = TRUE, ...) {
   result
 }
 
+quantile_distance <- function (q, obs_vect, q_level, obs_levels = c(0.025, 0.1, 0.25, 0.5, 0.75, 0.9, 0.975), ...) {
+  k <- length(obs_levels)
+  weights <- (c(obs_levels[-1], 2 - obs_levels[k]) - c(-obs_levels[1], obs_levels[-k])) / 2
+  result <- 2 * sum((sign(q_level - obs_levels) != sign(q - obs_vect)) * ifelse(q_level == obs_levels, 0.5, 1) * weights * abs(q - obs_vect))
+  result
+}
+
+wis_distance <- function (q_vect, obs_vect, q_levels = c(0.025, 0.1, 0.25, 0.5, 0.75, 0.9, 0.975), obs_levels = c(0.025, 0.1, 0.25, 0.5, 0.75, 0.9, 0.975), ...) {
+  k <- length(q_vect)
+  # Compute quantile distances for each level
+  qd_i <- function (i) { quantile_distance(q_vect[i], obs_vect, q_level = q_levels[i], obs_levels = obs_levels) }
+  qds <- sapply(1:k, qd_i)
+
+  mean(qds)
+}
+
 ##################################################
 ##################################################
 ##################################################
@@ -378,6 +473,31 @@ compute_wis_truth <- function (data, truth_data, models, horizon, start_date, en
   df_wis$model <- factor(x = df_wis$model, levels = models)
   
   list(df_wis = as_tibble(df_wis), wis_summ = wis_summ)
+}
+
+##################################################
+##################################################
+##################################################
+
+summarize_stratified_wis_truth <- function (wis_truth, ...) {
+  
+  S <- length(wis_truth)
+  df_wis <- wis_truth[[1]]$df_wis
+  df_wis$wis <- 0
+  wis_summ <- wis_truth[[1]]$wis_summ
+  H <- length(wis_summ)
+  M <- length(wis_summ[[1]])
+  for (i in 1:H) { wis_summ[[i]] <- rep(0, M) }
+  
+  for (s in 1:S) {
+    df_wis$wis <- df_wis$wis + wis_truth[[s]]$df_wis$wis
+    for (i in 1:H) { wis_summ[[i]] <- wis_summ[[i]] + wis_truth[[s]]$wis_summ[[i]] }
+  }
+  df_wis$wis <- df_wis$wis / S
+  for (i in 1:H) { wis_summ[[i]] <- wis_summ[[i]] / S }
+  
+  res <- list(df_wis = df_wis, wis_summ = wis_summ)
+  res
 }
 
 ##################################################
@@ -480,21 +600,26 @@ compute_wis_horizon_truth <- function (models, horizon, wis_summ, ...) {
 ##################################################
 ##################################################
 
-process_data_skip_days <- function (y, values, uncertain_size = 40, ...) {
+process_data_skip_days <- function (y, values, uncertain_size = 40, method = "other", ...) {
   
   values_idx_1 <- names(values)
   values_idx_2 <- names(values[[1]])
-  
+    
   b <- txtProgressBar(min = 1, max = length(values_idx_1), initial = 1)
   for (i in 1:length(values_idx_1)) {
     for (j in 1:length(values_idx_2)) {
       values[[values_idx_1[i]]][[as.character(values_idx_2[j])]][(1:uncertain_size)] <- NULL
-      y[[values_idx_1[i]]][[as.character(values_idx_2[j])]] <- y[[values_idx_1[i]]][[as.character(values_idx_2[j])]][-(1:uncertain_size)]
+      if (method != "all_quant") {
+        y[[values_idx_1[i]]][[as.character(values_idx_2[j])]] <- y[[values_idx_1[i]]][[as.character(values_idx_2[j])]][-(1:uncertain_size)]
+      } else {
+        y[[values_idx_1[i]]][[as.character(values_idx_2[j])]] <- y[[values_idx_1[i]]][[as.character(values_idx_2[j])]][-(1:uncertain_size), ]
+      }
+      
     }
     setTxtProgressBar(b, i)
   }
   close(b)
-  
+
   list(y = y, values = values)
 }
 
@@ -527,7 +652,7 @@ process_data_ignore_models <- function (current, values, idx_models = 1:8, ...) 
 ##################################################
 ##################################################
 
-compute_wis_training_horizon <- function (data, truth_data, start_date, end_date, horizon, models, training_size, skip_first_days = 1, quant = TRUE, probs = c(0.025, 0.100, 0.250, 0.500, 0.750, 0.900, 0.975), ...) {
+compute_wis_training_horizon <- function (data, truth_data, start_date, end_date, horizon, models, training_size, skip_first_days = 1, quant = TRUE, probs = c(0.025, 0.100, 0.250, 0.500, 0.750, 0.900, 0.975), method = "other", ...) {
   days <- seq(start_date + skip_first_days, end_date, by = "1 day")
   
   if (!quant) {
@@ -552,13 +677,28 @@ compute_wis_training_horizon <- function (data, truth_data, start_date, end_date
     
     for (n in 1:number_days) {
       tmp_data <- data[[as.character(dt)]][[as.character(horizon)]][[n]]
-      tmp_y <- truth_data[[as.character(dt)]][[as.character(horizon)]][n]
-      
+      if (method != "all_quant") {
+        tmp_y <- truth_data[[as.character(dt)]][[as.character(horizon)]][n]
+      } else {
+        tmp_y <- truth_data[[as.character(dt)]][[as.character(horizon)]][n, ]
+      }
+  
       for (m in 1:length(models)) {
-        if (!quant) {
-          wis_tmp[n, m  ] <- compute_wis(probs = probs, quant = tmp_data[m, ], y = tmp_y, average = (!quant))  
+    
+        if (method != "all_quant") {
+          if (!quant) {
+            wis_tmp[n, m  ] <- compute_wis(probs = probs, quant = tmp_data[m, ], y = tmp_y, average = (!quant))  
+          } else {
+            wis_tmp[n, m, ] <- compute_wis(probs = probs, quant = tmp_data[m, ], y = tmp_y, average = (!quant))  
+          }
         } else {
-          wis_tmp[n, m, ] <- compute_wis(probs = probs, quant = tmp_data[m, ], y = tmp_y, average = (!quant))  
+          if (!quant) {
+            wis_tmp[n, m  ] <- wis_distance(q_vect = tmp_data[m, ], obs_vect = tmp_y)
+          } else {
+            for (i in 1:length(probs)) {
+              wis_tmp[n, m, i] <- quantile_distance(q = tmp_data[m, i], obs_vect = tmp_y, q_level = probs[i])
+            }
+          }
         }
       }
     }
@@ -585,7 +725,7 @@ compute_wis_training_horizon <- function (data, truth_data, start_date, end_date
 ##################################################
 
 
-compute_wis_training <- function (data, truth_data, start_date, end_date, horizon, models, training_size, skip_recent_days = FALSE, quant = TRUE, horiz = TRUE, probs = c(0.025, 0.100, 0.250, 0.500, 0.750, 0.900, 0.975), ...) {
+compute_wis_training <- function (data, truth_data, start_date, end_date, horizon, models, training_size, skip_recent_days = FALSE, quant = TRUE, horiz = TRUE, probs = c(0.025, 0.100, 0.250, 0.500, 0.750, 0.900, 0.975), method = "other", ...) {
   
   skip_first_days <- ifelse(skip_recent_days, 1 + uncertain_size, 1)
   
@@ -595,7 +735,7 @@ compute_wis_training <- function (data, truth_data, start_date, end_date, horizo
   for (h in horizon) {
     print(paste("Horizon: ", h, sep = ""))
     
-    wis[[as.character(h)]] <- compute_wis_training_horizon(data = data, truth_data = truth_data, start_date = start_date, end_date = end_date, horizon = h, models = models, training_size = training_size, skip_first_days = skip_first_days, quant = quant)
+    wis[[as.character(h)]] <- compute_wis_training_horizon(data = data, truth_data = truth_data, start_date = start_date, end_date = end_date, horizon = h, models = models, training_size = training_size, skip_first_days = skip_first_days, quant = quant, method = method)
     
     if (!quant) {
       wis_avg[[as.character(h)]] <- wis[[as.character(h)]] |> colMeans(na.rm = TRUE)
@@ -880,7 +1020,7 @@ ensemble_pinball <- function (y, y_current, values, current, ens_models = NULL, 
   # N: number of day points
   # M: number of models
   
-  if (!is.list(y_current)) { # National level
+  if (!is.list(y_current) | length(y_current) == 29) { # National level
     if (horiz) { # Weights depend on the horizons
       N <- length(values)
       M <- nrow(values[[1]])
@@ -1008,7 +1148,7 @@ ensemble_pinball <- function (y, y_current, values, current, ens_models = NULL, 
     
     ##################################################
     
-  } else { # Stratified analysis (do not implemented if the weights do not depend on the horizons)
+  } else { # Stratified analysis (not implemented if the weights do not depend on the horizons)
     if (horiz) {
       S <- length(values) # Number of strata
       N <- length(values[[1]])

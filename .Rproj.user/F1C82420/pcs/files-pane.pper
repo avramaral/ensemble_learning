@@ -1,11 +1,11 @@
 {
     "sortOrder": [
         {
-            "columnIndex": 4,
+            "columnIndex": 3,
             "ascending": false
         },
         {
-            "columnIndex": 3,
+            "columnIndex": 4,
             "ascending": false
         },
         {
@@ -13,5 +13,5 @@
             "ascending": true
         }
     ],
-    "path": "~/Desktop/ensemble_learning"
+    "path": "~/Desktop/ensemble_learning/DATA/TRAINING"
 }

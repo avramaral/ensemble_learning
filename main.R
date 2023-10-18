@@ -16,7 +16,7 @@ source("utils.R")
 source("aux.R")
 
 ens_method <- "pinball" # c("wis", "pinball")
-skip_recent_days <- FALSE
+skip_recent_days <- FALSE # c(TRUE, FALSE)
 
 training_size <- 90
 uncertain_size <- 40
@@ -25,7 +25,7 @@ exploratory_wis <- FALSE # Plotting score for all individual and naive ensemble 
 ignore_naive_ensemble_data <- TRUE # Remove naive ensembles from the data objects, so the trained models do not take them as inputs
 
 quant <- TRUE # Weights depend (or not) on the quantiles
-horiz <- TRUE # Weights depend (or not) on the horizons # Only implemented for `TRUE` for stratified analysis
+horiz <- FALSE # Weights depend (or not) on the horizons # Only implemented for `TRUE` for stratified analysis
 
 post_processing <- FALSE
 post_select_mod <- "Epiforecasts"
@@ -33,21 +33,25 @@ post_select_mod <- "Epiforecasts"
 state_idx <- 17 # c(1:16, 17)
 age_idx <- 7 # c(1:6, 7)
 
+method <- "Mean" # c("Mean", "Median", "all_quant")
+
+reparameterize <- TRUE
+
 #######################
 ##### DELETE THIS #####
-if (all_states) {
-  state_idx <- 1:16 
-  age_idx <- 7 
-  cluster_size <- 64
-} else {
-  state_idx <- 17 
-  age_idx <- 1:6 
-  cluster_size <- 32
-}
+# if (all_states) {
+#   state_idx <- 1:16 
+#   age_idx <- 7 
+#   cluster_size <- 64
+# } else {
+#   state_idx <- 17 
+#   age_idx <- 1:6 
+#   cluster_size <- 32
+# }
 #######################
 #######################
 
-# cluster_size <- 4
+cluster_size <- 4
 
 ##################################################
 # LOAD AND PRE-PROCESS DATA
@@ -56,6 +60,8 @@ if (all_states) {
 
 data <- read_csv(file = "DATA/data.csv.gz")
 truth_data <- read_csv(file = "DATA/truth_40d.csv.gz")
+
+KIT_frozen_baseline <- data %>% filter(model == "KIT-frozen_baseline")
 
 state <- unique(data$location)
 state <- c(state, "DE")
@@ -98,6 +104,9 @@ r <- range(data$forecast_date)
 
 horizon <- -28:0
 probs <- c(0.025, 0.100, 0.250, 0.500, 0.750, 0.900, 0.975)
+
+KIT_frozen_baseline <- KIT_frozen_baseline %>% filter(forecast_date >= r[1], forecast_date <= r[2], age_group %in% age, location %in% state)
+baseline <- KIT_frozen_baseline
 
 ##################################################
 # UNTRAINED ENSEMBLE
@@ -151,7 +160,8 @@ if (length(naive_ensemble_files) == 1) {
 # Create the objects `y`, `y_current`, `values`, and `current`
 ##################################################
 
-retrieved_data_files <- paste("DATA/TRAINING/retrieved_data_training_size_", training_size, "_state_", state, "_age_", age, ".RDS", sep = "")
+method_files <- ifelse(method == "all_quant", "all_quant_", "")
+retrieved_data_files <- paste("DATA/TRAINING/retrieved_data_", method_files, "training_size_", training_size, "_state_", state, "_age_", age, ".RDS", sep = "")
 
 if (length(retrieved_data_files) == 1) {
   retrieved_data_file <- retrieved_data_files[1]
@@ -159,7 +169,7 @@ if (length(retrieved_data_files) == 1) {
   if (file.exists(retrieved_data_file)) {
     retrieved_data <- readRDS(file = retrieved_data_file)
   } else {
-    retrieved_data <- retrieve_data(data = data, truth_data = truth_data, naive_ensemble = naive_ensemble, models = models, horizon = horizon, start_date = r[1], end_date = r[2], skip_first_days = 1, training_size = training_size)
+    retrieved_data <- retrieve_data(data = data, truth_data = truth_data, naive_ensemble = naive_ensemble, models = models, horizon = horizon, start_date = r[1], end_date = r[2], skip_first_days = 1, training_size = training_size, method = method)
     saveRDS(object = retrieved_data, file = retrieved_data_file)
   }
   
@@ -167,6 +177,27 @@ if (length(retrieved_data_files) == 1) {
   y_current <- retrieved_data$y_current 
   values    <- retrieved_data$values
   current   <- retrieved_data$current
+  
+  
+  if (reparameterize) { # Reparameterize the model
+    
+    new_retrieved_data_file <- paste("DATA/TRAINING/new_retrieved_data_", method_files, "training_size_", training_size, "_state_", state, "_age_", age, ".RDS", sep = "")
+    if (!file.exists(new_retrieved_data_file)) {
+      
+      new_retrieved_data <- reparameterize_model(y = y, y_current = y_current, value = values, current = current, baseline = baseline) 
+      
+      saveRDS(object = new_retrieved_data, file = new_retrieved_data_file)
+    } else {
+      new_retrieved_data <- readRDS(file = new_retrieved_data_file)
+    }
+    
+    y         <- new_retrieved_data$y
+    y_current <- new_retrieved_data$y_current
+    values    <- new_retrieved_data$values
+    current   <- new_retrieved_data$current
+    
+  }
+  
   
   if (post_processing) { # Select just one model (`ens_models`) for post-processing
     new_tmp_data <- process_data_ignore_models(current = current, values = values, idx_models = idx_post)
@@ -183,7 +214,7 @@ if (length(retrieved_data_files) == 1) {
   }
   
   if (skip_recent_days) {
-    new_tmp_data <- process_data_skip_days(y = y, values = values, uncertain_size = uncertain_size)
+    new_tmp_data <- process_data_skip_days(y = y, values = values, uncertain_size = uncertain_size, method = method)
     y      <- new_tmp_data$y
     values <- new_tmp_data$values 
   }
@@ -256,7 +287,8 @@ if (exploratory_wis) {
 
 if (ens_method == "wis") {
 
-  wis_files <- paste("DATA/TRAINING/WIS/wis_weights_size_", training_size, "_skip_", as.character(skip_recent_days), "_state_", state, "_age_", age, "_quant_", as.character(quant), "_horiz_", as.character(horiz), ".RDS", sep = "")
+  method_files <- ifelse(method == "all_quant", "all_quant_", "")
+  wis_files <- paste("DATA/TRAINING/WIS/wis_weights_", method_files, "size_", training_size, "_skip_", as.character(skip_recent_days), "_state_", state, "_age_", age, "_quant_", as.character(quant), "_horiz_", as.character(horiz), ".RDS", sep = "")
 
   if (length(wis_files) == 1) {
     wis_file <- wis_files[1]
@@ -264,7 +296,7 @@ if (ens_method == "wis") {
     if (file.exists(wis_file)) {
       wis_training_list <- readRDS(file = wis_file)
     } else {
-      wis_training_list <- compute_wis_training(data = values, truth_data = y, start_date = r[1], end_date = r[2], horizon = horizon, models = ens_models, training_size = training_size, skip_recent_days = skip_recent_days, quant = quant, horiz = horiz)
+      wis_training_list <- compute_wis_training(data = values, truth_data = y, start_date = r[1], end_date = r[2], horizon = horizon, models = ens_models, training_size = training_size, skip_recent_days = skip_recent_days, quant = quant, horiz = horiz, method = method)
       saveRDS(object = wis_training_list, file = wis_file)
     }
     
@@ -281,7 +313,7 @@ if (ens_method == "wis") {
       plot_wis_line_horizon(df_wis_horizon = df_wis_horizon_training, models = ens_models, colors = colors, quant = quant, legend = TRUE)
     }
     
-  } else {
+  } else { # Stratified analysis (there is no implementation for the score based on the "Cramér distance")
     
     wis <- list()
     wis_avg <- list()
@@ -448,15 +480,17 @@ for (k in 1:length(days)) {
 
 if (ens_method == "pinball") { unregister_dopar(); stopCluster(cl) }
 
+reparameterize_file <- ifelse(reparameterize, "new_", "")
+
 if ((length(state) == 1) & (length(age) == 1)) {
   fitted_model_file <- ifelse(post_processing,
-                              paste("RESULTS/FITTED_OBJECTS/POST_PROCESSED/post-processing_model_", ens_models, "_size_", training_size, "_skip_", as.character(skip_recent_days), "_state_", state, "_age_", age, "_quant_", as.character(quant), "_horiz_", as.character(horiz), ".RDS", sep = ""),
-                              paste("RESULTS/FITTED_OBJECTS/method_", ens_method, "_size_", training_size, "_skip_", as.character(skip_recent_days), "_state_", state, "_age_", age, "_quant_", as.character(quant), "_horiz_", as.character(horiz), ".RDS", sep = ""))
+                              paste("RESULTS/FITTED_OBJECTS/POST_PROCESSED/", reparameterize_file, "post-processing_model_", ens_models, "_size_", training_size, "_skip_", as.character(skip_recent_days), "_state_", state, "_age_", age, "_quant_", as.character(quant), "_horiz_", as.character(horiz), ".RDS", sep = ""),
+                              paste("RESULTS/FITTED_OBJECTS/", reparameterize_file, method_files, "method_", ens_method, "_size_", training_size, "_skip_", as.character(skip_recent_days), "_state_", state, "_age_", age, "_quant_", as.character(quant), "_horiz_", as.character(horiz), ".RDS", sep = ""))
   saveRDS(object = list(ensemble = ensemble, new_data = new_data), file = fitted_model_file)
 } else {
   if (length(state) != 1) {
-    saveRDS(object = list(ensemble = ensemble, new_data = new_data), file = paste("RESULTS/FITTED_OBJECTS/ALL_STATES_method_", ens_method, "_size_", training_size, "_skip_", as.character(skip_recent_days), "_quant_", as.character(quant), "_horiz_", as.character(horiz), ".RDS", sep = ""))
+    saveRDS(object = list(ensemble = ensemble, new_data = new_data), file = paste("RESULTS/FITTED_OBJECTS/", reparameterize_file, "ALL_STATES_method_", ens_method, "_size_", training_size, "_skip_", as.character(skip_recent_days), "_quant_", as.character(quant), "_horiz_", as.character(horiz), ".RDS", sep = ""))
   } else if (length(age) != 1) {
-    saveRDS(object = list(ensemble = ensemble, new_data = new_data), file = paste("RESULTS/FITTED_OBJECTS/ALL_AGES_method_",   ens_method, "_size_", training_size, "_skip_", as.character(skip_recent_days), "_quant_", as.character(quant), "_horiz_", as.character(horiz), ".RDS", sep = ""))
+    saveRDS(object = list(ensemble = ensemble, new_data = new_data), file = paste("RESULTS/FITTED_OBJECTS/", reparameterize_file, "ALL_AGES_method_",   ens_method, "_size_", training_size, "_skip_", as.character(skip_recent_days), "_quant_", as.character(quant), "_horiz_", as.character(horiz), ".RDS", sep = ""))
   }
 } 

@@ -101,7 +101,7 @@ if (file.exists(compute_wis_file)) {
   # ensemble_data <- ensemble_data |> filter(forecast_date != "2022-01-09")
   
   # Make all models comparable: `skip_first_days = 0`, since I already filtered the `ensemble_data` before
-  wis_truth <- compute_wis_truth(data = ensemble_data, truth_data = truth_data, models = models, horizon = horizon, start_date = r[1], end_date = r[2], skip_first_days = 0)
+  wis_truth <- compute_wis_truth(data = ensemble_data, truth_data = truth_data, models = models, horizon = horizon, start_date = r[1], end_date = r[2], skip_first_days = 30)
   saveRDS(object = wis_truth, file = compute_wis_file)
 }
 
@@ -109,7 +109,7 @@ df_wis <- wis_truth$df_wis
 wis_summ <- wis_truth$wis_summ
 
 # Bar plot
-plot_wis_bar(df_wis = df_wis, wis_summ = wis_summ, models = models, colors = colors, ylim_manual = 120)
+plot_wis_bar(df_wis = df_wis, wis_summ = wis_summ, models = models, colors = colors, ylim_manual = 100)
 
 # Line plot over the horizons
 df_wis_horizon_truth <- compute_wis_horizon_truth(models = models, horizon = horizon, wis_summ = wis_summ)
