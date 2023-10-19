@@ -135,8 +135,8 @@ retrieve_data <- function (data, truth_data, naive_ensemble, models, horizon, st
 ##################################################
 ##################################################
 
-reparameterize_model <- function (y, y_current, values, current, baseline, ...) {
-  
+reparameterize_model <- function (y, y_current, values, current, baseline, state = "DE", age = "00+", ...) {
+
   new_y <- list()
   new_y_current <- list()
   new_values  <- list()
@@ -163,13 +163,13 @@ reparameterize_model <- function (y, y_current, values, current, baseline, ...) 
       
       avlb_training_size <- length(values[[as.character(d)]][[as.character(h)]])
       for (i in 1:avlb_training_size) {
-        b <- baseline %>% filter(forecast_date == (as.Date(d) - i), target == paste(h, " day ahead inc hosp", sep = ""), type == "quantile") %>% select(value) %>% c() %>% unlist() %>% unname()
+        b <- baseline %>% filter(location == state, age_group == age, forecast_date == (as.Date(d) - i), target == paste(h, " day ahead inc hosp", sep = ""), type == "quantile") %>% select(value) %>% c() %>% unlist() %>% unname()
         new_values[[as.character(d)]][[as.character(h)]][[i]] <- values[[as.character(d)]][[as.character(h)]][[i]] - b
       
         new_y[[as.character(d)]][[as.character(h)]][i] <- y[[as.character(d)]][[as.character(h)]][i] - b[4]
       }
       
-      b <- baseline %>% filter(forecast_date == d, target == paste(h, " day ahead inc hosp", sep = ""), type == "quantile") %>% select(value) %>% c() %>% unlist() %>% unname()
+      b <- baseline %>% filter(location == state, age_group == age, forecast_date == d, target == paste(h, " day ahead inc hosp", sep = ""), type == "quantile") %>% select(value) %>% c() %>% unlist() %>% unname()
       new_current[[as.character(d)]][[as.character(h)]][[1]] <- current[[as.character(d)]][[as.character(h)]][[1]] - b
       
       new_y_current[[as.character(d)]][[as.character(h)]] <- y_current[[as.character(d)]][[as.character(h)]] - b[4]

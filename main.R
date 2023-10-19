@@ -227,6 +227,8 @@ if (length(retrieved_data_files) == 1) {
   current <- list()
   
   for (i in 1:length(retrieved_data_files)) {
+    print(paste(sprintf("%02d", i), " out of ", sprintf("%02d", length(retrieved_data_files)), sep = ""))
+    
     retrieved_data_file <- retrieved_data_files[i]
     
     if (file.exists(retrieved_data_file)) { retrieved_data <- readRDS(file = retrieved_data_file) } else { stop("Create files first.") }
@@ -235,6 +237,35 @@ if (length(retrieved_data_files) == 1) {
     y_current[[i]] <- retrieved_data$y_current 
     values[[i]]    <- retrieved_data$values
     current[[i]]   <- retrieved_data$current
+    
+    if (reparameterize) { # Reparameterize the model
+      
+      parts_path <- strsplit(retrieved_data_file, "/")[[1]]
+      new_retrieved_data_file <- paste(parts_path[1], "/", parts_path[2], "/new_", parts_path[3] ,sep = "")
+      
+      if (!file.exists(new_retrieved_data_file)) {
+        
+        if (length(state) > 1) {
+          tmp_state <- state[1]
+          tmp_age   <- age
+        } else if (length(age) > 1) {
+          tmp_state <- state
+          tmp_age   <- age[1]
+        }
+        
+        new_retrieved_data <- reparameterize_model(y = y[[i]], y_current = y_current[[i]], values = values[[i]], current = current[[i]], baseline = baseline, state = tmp_state, age = tmp_age) 
+      
+        saveRDS(object = new_retrieved_data, file = new_retrieved_data_file)
+      } else {
+        new_retrieved_data <- readRDS(file = new_retrieved_data_file)
+      }
+      
+      y[[i]]         <- new_retrieved_data$y
+      y_current[[i]] <- new_retrieved_data$y_current
+      values[[i]]    <- new_retrieved_data$values
+      current[[i]]   <- new_retrieved_data$current
+      
+    }
     
     if (ignore_naive_ensemble_data) { 
       new_tmp_data <- process_data_ignore_models(current = current[[i]], values = values[[i]], idx_models = (1:length(ens_models)))
