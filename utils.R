@@ -1093,7 +1093,7 @@ ensemble_pinball <- function (y, y_current, values, current, ens_models = NULL, 
         theta <- rep(x = 0, times = length(probs))
         phi <- rep(x = 0, times = length(probs))
         
-        if (M == 1) { # Post-processing
+        if ((M == 1) & (!horiz)) { # Post-processing
           for (q in 1:length(probs)) {
             tmp_wis <- wis[, q]
             if (is.null(dim(tmp_wis))) {
@@ -1136,7 +1136,7 @@ ensemble_pinball <- function (y, y_current, values, current, ens_models = NULL, 
       }
       tmp_wis_list <- list()
       for (q in 1:length(probs)) {
-        if (M == 1) {
+        if ((M == 1) & (!horiz)) {
           tmp_wis <- wis[,   q]
         } else {
           tmp_wis <- wis[, , q] 

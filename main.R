@@ -36,7 +36,7 @@ exploratory_wis <- FALSE # Plotting score for all individual and naive ensemble 
 ignore_naive_ensemble_data <- TRUE # Remove naive ensembles from the data objects, so the trained models do not take them as inputs
 
 quant <- TRUE # Weights depend (or not) on the quantiles
-# horiz <- FALSE # Weights depend (or not) on the horizons # Only implemented for `TRUE` for stratified analysis
+# horiz <- TRUE # Weights depend (or not) on the horizons # Only implemented for `TRUE` for stratified analysis
 
 post_processing <- TRUE
 # post_select_mod <- "KIT"
