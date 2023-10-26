@@ -1089,7 +1089,7 @@ ensemble_pinball <- function (y, y_current, values, current, ens_models = NULL, 
               }
               wis[count,   ] <-  tmp_fancy_score
             } else {
-              wis[count,   ] <-  compute_wis(quant = values[[as.character(horizon[h])]][[n]][q], probs = probs, y = y[[as.character(horizon[h])]][n], average = (!quant))
+              wis[count,   ] <-  compute_wis(quant = values[[as.character(horizon[h])]][[n]], probs = probs, y = y[[as.character(horizon[h])]][n], average = (!quant))
             }
           } else {
             wis[count, , ] <- apply(X = values[[as.character(horizon[h])]][[n]], MARGIN = 1, FUN = compute_wis, probs = probs, y = y[[as.character(horizon[h])]][n], average = (!quant)) |> t()

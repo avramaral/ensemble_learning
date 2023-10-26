@@ -27,7 +27,7 @@ source("utils.R")
 source("aux.R")
 
 ens_method <- "pinball" # c("wis", "pinball")
-# skip_recent_days <- FALSE # c(TRUE, FALSE)
+# skip_recent_days <- TRUE # c(TRUE, FALSE)
 
 training_size <- 90
 uncertain_size <- 40
@@ -44,7 +44,7 @@ post_processing <- TRUE
 state_idx <- 17 # c(1:16, 17)
 age_idx <- 7    # c(1:6, 7)
 
-# method <- "all_quant" # c("Mean", "Median", "all_quant")
+# method <- "Mean" # c("Mean", "Median", "all_quant")
 
 reparameterize <- TRUE
 
@@ -421,7 +421,7 @@ if (ens_method == "pinball") {
   clusterExport(cl, c("cost_function", "par_weights_scale", "compute_wis", "mpfr", "elementwise_avg", "elementwise_avg_3d", "quantile_distance"), envir = environment()) # Include exported functions
 }
 
-for (k in 1:15) {
+for (k in 1:length(days)) {
   dt <- days[k]
   print(paste(dt, " (", sprintf("%03d", count), "/", sprintf("%03d", length(days)), ")", sep = ""))
 
