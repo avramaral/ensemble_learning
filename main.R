@@ -18,12 +18,24 @@
 
 ##################################################
 
+##################################################
+###### ENSEMBLE ##################################
+##################################################
+
+# args <- commandArgs(trailingOnly = TRUE)
+# skip_recent_days <- as.logical(args[1])
+# horiz            <- as.logical(args[2])
+# method           <- as.character(args[4])
+# cluster_size     <- as.numeric(args[5])
+
+##################################################
+
 source("header.R")
 source("utils.R")
 source("aux.R")
 
 ens_method <- "pinball" # c("wis", "pinball")
-skip_recent_days <- FALSE # c(TRUE, FALSE)
+# skip_recent_days <- FALSE # c(TRUE, FALSE)
 
 training_size <- 90
 uncertain_size <- 40
@@ -32,7 +44,7 @@ exploratory_wis <- FALSE # Plotting score for all individual and naive ensemble 
 ignore_naive_ensemble_data <- TRUE # Remove naive ensembles from the data objects, so the trained models do not take them as inputs
 
 quant <- TRUE # Weights depend (or not) on the quantiles
-horiz <- FALSE # Weights depend (or not) on the horizons # Only implemented for `TRUE` for stratified analysis
+# horiz <- FALSE # Weights depend (or not) on the horizons # Only implemented for `TRUE` for stratified analysis
 
 post_processing <- FALSE
 post_select_mod <- "KIT"
@@ -40,7 +52,7 @@ post_select_mod <- "KIT"
 state_idx <- 17 # c(1:16, 17)
 age_idx <- 7    # c(1:6, 7)
 
-method <- "all_quant" # c("Mean", "Median", "all_quant")
+# method <- "all_quant" # c("Mean", "Median", "all_quant")
 
 reparameterize <- TRUE
 
@@ -58,7 +70,7 @@ reparameterize <- TRUE
 #######################
 #######################
 
-cluster_size <- 4
+# cluster_size <- 4
 
 ##################################################
 # LOAD AND PRE-PROCESS DATA
