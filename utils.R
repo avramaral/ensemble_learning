@@ -1031,6 +1031,9 @@ ensemble_pinball <- function (y, y_current, values, current, ens_models = NULL, 
       H <- length(values)
       N <- length(values[[1]])
       M <- nrow(values[[1]][[1]])
+      if (is.null(M)) {
+        M <- 1
+      }
     }
     
     if (!quant) { # Weights do not depend on the quantiles
@@ -1038,8 +1041,12 @@ ensemble_pinball <- function (y, y_current, values, current, ens_models = NULL, 
     } else { # Weights depend on the quantiles
       if (horiz) {
         wis <- array(data = 0, dim = c(N, M, length(probs)))
-      } else { 
-        wis <- array(data = 0, dim = c((N * H), M, length(probs)))
+      } else {
+        if (M == 1) {
+          wis <- array(data = 0, dim = c((N * H),    length(probs)))
+        } else {
+          wis <- array(data = 0, dim = c((N * H), M, length(probs)))
+        }
       }
     }
     
@@ -1062,7 +1069,11 @@ ensemble_pinball <- function (y, y_current, values, current, ens_models = NULL, 
       count <- 1
       for (n in 1:N) {
         for (h in 1:H) {
-          wis[count, , ] <- apply(X = values[[as.character(horizon[h])]][[n]], MARGIN = 1, FUN = compute_wis, probs = probs, y = y[[as.character(horizon[h])]][n], average = (!quant)) |> t()
+          if (M == 1) { # Post-processing
+            wis[count,   ] <-  compute_wis(quant = values[[as.character(horizon[h])]][[n]], probs = probs, y = y[[as.character(horizon[h])]][n], average = (!quant))
+          } else {
+            wis[count, , ] <- apply(X = values[[as.character(horizon[h])]][[n]], MARGIN = 1, FUN = compute_wis, probs = probs, y = y[[as.character(horizon[h])]][n], average = (!quant)) |> t()
+          }
           count <- count + 1
         }
       }
@@ -1082,17 +1093,28 @@ ensemble_pinball <- function (y, y_current, values, current, ens_models = NULL, 
         theta <- rep(x = 0, times = length(probs))
         phi <- rep(x = 0, times = length(probs))
         
-        for (q in 1:length(probs)) {
-          tmp_wis <- wis[, , q]
-          if (is.null(dim(tmp_wis))) {
-            tmp_wis <- t(as.matrix(tmp_wis)) 
-          }
-          est_pars <- grid_optim(probs = probs, values = values, y = y, q = q, quant = quant, M = M, wis = tmp_wis, by = by, theta_lim = c(lower, upper), horiz = horiz, short_grid_search = short_grid_search)
-          if (M == 1) {
+        if (M == 1) { # Post-processing
+          for (q in 1:length(probs)) {
+            tmp_wis <- wis[, q]
+            if (is.null(dim(tmp_wis))) {
+              tmp_wis <- t(as.matrix(tmp_wis)) 
+            }
+            est_pars <- grid_optim(probs = probs, values = values, y = y, q = q, quant = quant, M = M, wis = tmp_wis, by = by, theta_lim = c(lower, upper), horiz = horiz, short_grid_search = short_grid_search)
             phi[q] <- est_pars[1]
-          } else {
-            theta[q] <- est_pars[1]
-            phi[q]   <- est_pars[2] 
+          }
+        } else {
+          for (q in 1:length(probs)) {
+            tmp_wis <- wis[, , q]
+            if (is.null(dim(tmp_wis))) {
+              tmp_wis <- t(as.matrix(tmp_wis)) 
+            }
+            est_pars <- grid_optim(probs = probs, values = values, y = y, q = q, quant = quant, M = M, wis = tmp_wis, by = by, theta_lim = c(lower, upper), horiz = horiz, short_grid_search = short_grid_search)
+            if (M == 1) {
+              phi[q] <- est_pars[1]
+            } else {
+              theta[q] <- est_pars[1]
+              phi[q]   <- est_pars[2] 
+            }
           }
         }
       }
@@ -1114,7 +1136,11 @@ ensemble_pinball <- function (y, y_current, values, current, ens_models = NULL, 
       }
       tmp_wis_list <- list()
       for (q in 1:length(probs)) {
-        tmp_wis <- wis[, , q]
+        if (M == 1) {
+          tmp_wis <- wis[,   q]
+        } else {
+          tmp_wis <- wis[, , q] 
+        }
         if (is.null(dim(tmp_wis))) {
           tmp_wis <- t(as.matrix(tmp_wis)) 
         }
@@ -1132,7 +1158,11 @@ ensemble_pinball <- function (y, y_current, values, current, ens_models = NULL, 
           }
         } else {
           for (h in 1:H) {
-            nowcast[as.character(horizon[h]), q] <- w[q, ] %*% current[[as.character(horizon[h])]][[1]][, q]
+            if (M == 1) {
+              nowcast[as.character(horizon[h]), q] <- w[q, ] %*% current[[as.character(horizon[h])]][[1]][  q]
+            } else {
+              nowcast[as.character(horizon[h]), q] <- w[q, ] %*% current[[as.character(horizon[h])]][[1]][, q] 
+            }
           }
         }
       }
@@ -1359,12 +1389,12 @@ ensemble_ranked_unweighted <- function (y, y_current, values, current, n_ensembl
 ##################################################
 ##################################################
 
-grid_optim <- function (probs, values, y, q, quant, M, wis = NULL, by = 0.01, theta_lim = c(-10, 10), phi_lim = c(0.75, 1.25), horiz = TRUE, short_grid_search = TRUE, ...) {
+grid_optim <- function (probs, values, y, q, quant, M, wis = NULL, by = 0.01, theta_lim = c(-10, 10), phi_lim = c(0.05, 5), horiz = TRUE, short_grid_search = TRUE, ...) {
     
     if (M == 1) { 
       
       wis <- t(wis) 
-      pts <- seq(phi_lim[1], phi_lim[2], by = by)
+      pts <- seq(phi_lim[1], phi_lim[2], by = 0.05)
       rsp <- foreach(i = 1:length(pts)) %dopar% { cost_function(pars = pts[i], probs = probs, values = values, y = y, wis = wis, q = q, quant = quant, horiz = horiz) } 
       pts <- cbind(pts, unlist(rsp))
       colnames(pts) <- c("phi", "cost")
@@ -1510,18 +1540,39 @@ elementwise_avg_3d <- function (my_list, ...) {
   result
 }
 
-cost_function <- function (pars, probs, values, y, wis, q = 1, quant = FALSE, horiz = TRUE, ...) {
+cost_function <-  function (pars, probs, values, y, wis, q = 1, quant = FALSE, horiz = TRUE, ...) {
   
   if (!is.list(wis)) { # National level
-
+    
     if (length(pars) == 1) { # If just one model (post-processing)
       
       phi <- pars
-      N <- length(values)
-      ens_wis <- rep(0, N)
+      
+      if (horiz) {
+        N <- length(values)
+        ens_wis <- rep(0, N)
+      } else {
+        H <- length(values)
+        N <- length(values[[1]])
+        ens_wis <- rep(0, (N * H))
+      }
+      
       w <- phi
+      
+      count_H <- 1
+      count_N <- 1
       for (n in 1:length(ens_wis)) {
-        ens_wis[n] <- compute_wis(probs = probs, quant = w %*% values[[n]], y = y[n], average = (!quant))[q]  
+        if (horiz) {
+          ens_wis[n] <- compute_wis(probs = probs, quant = w %*% values[[n]], y = y[n], average = (!quant))[q]  
+        } else {
+          ens_wis[n] <- compute_wis(probs = probs, quant = w %*% values[[count_H]][[count_N]], y = y[[count_H]][count_N], average = (!quant))[q]  
+        }
+        
+        count_N <- count_N + 1
+        if ((n %% N) == 0) {
+          count_H <- count_H + 1  
+          count_N <- 1
+        }
       }
       
     } else {
@@ -1573,7 +1624,7 @@ cost_function <- function (pars, probs, values, y, wis, q = 1, quant = FALSE, ho
       S <- length(values)
       N <- length(values[[1]])
       ens_wis <- matrix(0, S, N)
-
+      
       w <- list()
       for (s in 1:S) {
         w[[s]] <- par_weights_scale(theta = theta, phi = phi, wis = apply(X = wis[[s]], MARGIN = 2, FUN = mean))
@@ -1624,29 +1675,54 @@ par_weights_scale <- function (theta, phi, wis, std_wis = TRUE, ...) {
 ##################################################
 ##################################################
 
-weights_tibble <- function (ensemble, r, models, horizon, probs = c(0.025, 0.100, 0.250, 0.500, 0.750, 0.900, 0.975), skip_first_days = 1, ens_model = NULL, ...) {
+weights_tibble <- function (ensemble, r, models, horizon, probs = c(0.025, 0.100, 0.250, 0.500, 0.750, 0.900, 0.975), skip_first_days = 1, ens_model = NULL, horiz = TRUE, ...) {
   days <- seq(r[1] + skip_first_days, r[2], by = "1 day")
   w_hat <- data.frame(forecast_date = as.Date(character()), horizon = character(), model = character(), quant = double(), value = double(), stringsAsFactors = FALSE)
   w_hat <- as_tibble(w_hat)
   
-  b <- txtProgressBar(min = 1, max = length(days), initial = 1) 
-  for (k in 1:length(days)) { 
-    dt <- days[k]
-    for (i in 1:length(horizon)) {
+  if (horiz) {
+    
+    b <- txtProgressBar(min = 1, max = length(days), initial = 1) 
+    for (k in 1:length(days)) { 
+      dt <- days[k]
+      for (i in 1:length(horizon)) {
+        for (m in 1:length(models)) {
+          for (q in 1:length(probs)) {
+            if (ens_model == "DISW") {
+              value <- ensemble[[as.character(dt)]][[as.character(horizon[i])]]$weights[, q][m]
+            } else {
+              value <- ensemble[[as.character(dt)]][[as.character(horizon[i])]]$weights[q, ][m]
+            }
+            w_hat <- w_hat |> add_row(forecast_date = dt, horizon = as.character(horizon[i]), model = models[m], quant = probs[q], value = value)
+          }
+        }
+      }
+      setTxtProgressBar(b, k)
+    }
+    close(b)
+    
+  } else {
+    
+    b <- txtProgressBar(min = 1, max = length(days), initial = 1) 
+    for (k in 1:length(days)) { 
+      dt <- days[k]
       for (m in 1:length(models)) {
         for (q in 1:length(probs)) {
           if (ens_model == "DISW") {
-            value <- ensemble[[as.character(dt)]][[as.character(horizon[i])]]$weights[, q][m]
+            value <- ensemble[[as.character(dt)]]$weights[, q][m]
           } else {
-            value <- ensemble[[as.character(dt)]][[as.character(horizon[i])]]$weights[q, ][m]
+            value <- ensemble[[as.character(dt)]]$weights[q, ][m]
           }
-          w_hat <- w_hat |> add_row(forecast_date = dt, horizon = as.character(horizon[i]), model = models[m], quant = probs[q], value = value)
+          for (h in horizon) {
+            w_hat <- w_hat |> add_row(forecast_date = dt, horizon = as.character(h), model = models[m], quant = probs[q], value = value)           
+          }
         }
       }
+      setTxtProgressBar(b, k)
     }
-    setTxtProgressBar(b, k)
+    close(b)
+    
   }
-  close(b)
   
   w_hat
 }
@@ -1771,6 +1847,81 @@ complete_NA <- function (x, ...) {
   }
   
   x
+}
+
+##################################################
+##################################################
+##################################################
+
+add_baseline_new_data <- function (new_data, baseline = NULL, reparameterize = FALSE, ...) {
+  
+  if (reparameterize) {
+    
+    if (nrow(new_data) != nrow(baseline)) { stop("`new_data` and `baseline` must have same size.") }
+    
+    new_data <- new_data %>% arrange(location, age_group, forecast_date, target_end_date, quantile)
+    baseline <- baseline %>% arrange(location, age_group, forecast_date, target_end_date, quantile)
+    
+    new_data$value <- baseline$value + new_data$value
+  }
+  
+  new_data
+}
+
+
+add_baseline_ensemble <- function (ensemble, baseline = NULL, reparameterize = FALSE, horiz = FALSE, ...) {
+  
+  if (reparameterize) {
+    
+    if (horiz) { horizon <- unique(as.numeric(names(ensemble[[1]]))) }
+    
+    if (length(ensemble) != length(unique(baseline$forecast_date))) { stop("`ensemble` and `baseline` must have same size.") }
+    
+    ds <- names(ensemble)
+    
+    if (length(ds) > 1) { b <- txtProgressBar(min = 1, max = length(ds), initial = 1) }
+    for (i in 1:length(ds)) {
+      
+      d <- ds[i]
+      
+      if (horiz) {
+        tmp_ensemble <- list()
+        for (h in horizon) {
+          tmp_ensemble[[as.character(h)]] <- ensemble[[as.character(d)]][[as.character(h)]]$nowcast
+        }
+      } else {
+        tmp_ensemble <- ensemble[[as.character(d)]]$nowcast
+        J <- nrow(tmp_ensemble) 
+      }
+      
+      if (horiz) {
+        for (h in horizon) {
+          tmp_values <- baseline %>% filter(forecast_date == as.Date(d), target == paste(h, "day ahead inc hosp")) %>% select(value) %>% c() %>% unlist() %>% unname()
+          tmp_ensemble[[as.character(h)]] <- tmp_ensemble[[as.character(h)]] + tmp_values
+        }
+        
+      } else {
+        for (j in 1:J) {
+          h <- as.numeric(rownames(tmp_ensemble)[j])
+          
+          tmp_values <- baseline %>% filter(forecast_date == as.Date(d), target == paste(h, "day ahead inc hosp")) %>% select(value) %>% c() %>% unlist() %>% unname()
+          tmp_ensemble[j, ] <- tmp_ensemble[j, ] + tmp_values
+        }
+      }
+      
+      if (horiz) {
+        for (h in horizon) {
+          ensemble[[as.character(d)]][[as.character(h)]]$nowcast <- tmp_ensemble[[as.character(h)]]
+        }
+      } else {
+        ensemble[[as.character(d)]]$nowcast <- tmp_ensemble
+      }
+      if (length(ds) > 1) { setTxtProgressBar(b, i) }
+    }
+  }
+  if (length(ds) > 1) { close(b) }
+  
+  ensemble
 }
 
 ##################################################

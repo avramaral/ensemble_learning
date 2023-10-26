@@ -12,10 +12,12 @@ training_size <- 90
 uncertain_size <- 40
 
 quant <- TRUE
-horiz <- TRUE 
+horiz <- TRUE
 
 state_idx <- 17
 age_idx <- 7
+
+reparameterize <- FALSE
 
 ##################################################
 # LOAD AND PRE-PROCESS DATA (FOR ALL ENSEMBLE MODELS)
@@ -24,6 +26,8 @@ age_idx <- 7
 
 data <- read_csv(file = "DATA/data.csv.gz")
 truth_data <- read_csv(file = "DATA/truth_40d.csv.gz")
+
+KIT_frozen_baseline <- data %>% filter(model == "KIT-frozen_baseline")
 
 state <- unique(data$location)
 state <- c(state, "DE")
@@ -49,27 +53,37 @@ naive_ensemble_file <- paste("DATA/UNTRAINED_ENSEMBLE/naive_ensemble_state_", st
 naive_ensemble <- readRDS(file = naive_ensemble_file)
 data <- rbind(data, naive_ensemble)
 
+r <- range(data$forecast_date)
+
+KIT_frozen_baseline <- KIT_frozen_baseline %>% filter(forecast_date >= r[1] + 1, forecast_date <= r[2], age_group %in% age, location %in% state, type == "quantile")
+baseline <- KIT_frozen_baseline
+
 ##################################################
+
+reparameterize_file <- ifelse(reparameterize, "new_", "")
 
 DISW_1_file <- paste("RESULTS/FITTED_OBJECTS/method_wis_size_", training_size, "_skip_TRUE_state_", state, "_age_", age, "_quant_", as.character(quant), "_horiz_", as.character(horiz), ".RDS", sep = "")
 DISW_2_file <- paste("RESULTS/FITTED_OBJECTS/method_wis_size_", training_size, "_skip_FALSE_state_", state, "_age_", age, "_quant_", as.character(quant), "_horiz_", as.character(horiz), ".RDS", sep = "")
 ISW_1_file  <- paste("RESULTS/FITTED_OBJECTS/method_pinball_size_", training_size, "_skip_TRUE_state_", state, "_age_", age, "_quant_", as.character(quant), "_horiz_", as.character(horiz), ".RDS", sep = "")
 ISW_2_file  <- paste("RESULTS/FITTED_OBJECTS/method_pinball_size_", training_size, "_skip_FALSE_state_", state, "_age_", age, "_quant_", as.character(quant), "_horiz_", as.character(horiz), ".RDS", sep = "")
+# ISW_2_file  <- paste("RESULTS/FITTED_OBJECTS/", reparameterize_file ,"method_pinball_size_", training_size, "_skip_FALSE_state_", state, "_age_", age, "_quant_", as.character(quant), "_horiz_", as.character(horiz), ".RDS", sep = "")
+# DISW_1_file <- DISW_2_file <- ISW_1_file <- ISW_2_file
 
 DISW_1 <- readRDS(file = DISW_1_file)
 DISW_2 <- readRDS(file = DISW_2_file)
 ISW_1  <- readRDS(file = ISW_1_file)
 ISW_2  <- readRDS(file = ISW_2_file)
 
-DISW_1_ens <- DISW_1$ensemble
-DISW_2_ens <- DISW_2$ensemble
-ISW_1_ens  <- ISW_1$ensemble
-ISW_2_ens  <- ISW_2$ensemble
+DISW_1_ens <- add_baseline_ensemble(ensemble = DISW_1$ensemble, baseline = baseline, reparameterize = reparameterize)
+DISW_2_ens <- add_baseline_ensemble(ensemble = DISW_2$ensemble, baseline = baseline, reparameterize = reparameterize)
+ISW_1_ens  <- add_baseline_ensemble(ensemble = ISW_1$ensemble , baseline = baseline, reparameterize = reparameterize)
+ISW_2_ens  <- add_baseline_ensemble(ensemble = ISW_2$ensemble , baseline = baseline, reparameterize = reparameterize)
+# ISW_2_ens <- ISW_1_ens <- DISW_2_ens <- DISW_1_ens
 
-DISW_1 <- DISW_1$new_data
-DISW_2 <- DISW_2$new_data
-ISW_1  <- ISW_1$new_data
-ISW_2  <- ISW_2$new_data
+DISW_1 <- add_baseline_new_data(new_data = DISW_1$new_data, baseline = baseline, reparameterize = reparameterize)
+DISW_2 <- add_baseline_new_data(new_data = DISW_2$new_data, baseline = baseline, reparameterize = reparameterize)
+ISW_1  <- add_baseline_new_data(new_data = ISW_1$new_data , baseline = baseline, reparameterize = reparameterize)
+ISW_2  <- add_baseline_new_data(new_data = ISW_2$new_data , baseline = baseline, reparameterize = reparameterize)
 DISW_1$model <- models[3]
 DISW_2$model <- models[4]
 ISW_1$model  <- models[5]
@@ -91,7 +105,10 @@ probs <- c(0.025, 0.100, 0.250, 0.500, 0.750, 0.900, 0.975)
 # Compute WIS for all post-processed models, given truth final data
 ##################################################
 
-compute_wis_file <- paste("RESULTS/FITTED_OBJECTS/WIS/wis_size_", training_size, "_state_", state, "_age_", age, "_quant_", as.character(quant), "_horiz_", as.character(horiz), ".RDS", sep = "")
+# Extra gap
+skip_first_days <- 30
+compute_wis_file <- paste("RESULTS/FITTED_OBJECTS/WIS/wis_size_", training_size, "_state_", state, "_age_", age, "_quant_", as.character(quant), "_horiz_", as.character(horiz), "_extra_gap_", skip_first_days,".RDS", sep = "")
+# compute_wis_file <- paste("RESULTS/FITTED_OBJECTS/WIS/wis_size_", training_size, "_state_", state, "_age_", age, "_quant_", as.character(quant), "_horiz_", as.character(horiz), ".RDS", sep = "")
 
 if (file.exists(compute_wis_file)) {
   wis_truth <- readRDS(file = compute_wis_file)
@@ -101,12 +118,15 @@ if (file.exists(compute_wis_file)) {
   # ensemble_data <- ensemble_data |> filter(forecast_date != "2022-01-09")
   
   # Make all models comparable: `skip_first_days = 0`, since I already filtered the `ensemble_data` before
-  wis_truth <- compute_wis_truth(data = ensemble_data, truth_data = truth_data, models = models, horizon = horizon, start_date = r[1], end_date = r[2], skip_first_days = 30)
+  wis_truth <- compute_wis_truth(data = ensemble_data, truth_data = truth_data, models = models, horizon = horizon, start_date = r[1], end_date = r[2], skip_first_days = skip_first_days)
   saveRDS(object = wis_truth, file = compute_wis_file)
 }
 
 df_wis <- wis_truth$df_wis
 wis_summ <- wis_truth$wis_summ
+
+# df_wis[!df_wis$model %in% c("Mean", "Median", "ISW (St.2.)"), "wis"] <- 0
+# for (h in horizon) { wis_summ[[as.character(h)]][c(3, 4, 5)] <- 0 }
 
 # Bar plot
 plot_wis_bar(df_wis = df_wis, wis_summ = wis_summ, models = models, colors = colors, ylim_manual = 100)
@@ -135,11 +155,12 @@ if (file.exists(w_hat_file)) {
   w_hat_ISW_2  <- w_hat$w_hat_ISW_2
 
 } else {
-  w_hat_DISW_1 <- weights_tibble(ensemble = DISW_1_ens, r = rr, models = models_orig, horizon = horizon, skip_first_days = skip_first_days_1, probs = probs, ens_model = "DISW")
-  w_hat_DISW_2 <- weights_tibble(ensemble = DISW_2_ens, r = rr, models = models_orig, horizon = horizon, skip_first_days = skip_first_days_2, probs = probs, ens_model = "DISW")
-  w_hat_ISW_1  <- weights_tibble(ensemble = ISW_1_ens, r = rr, models = models_orig, horizon = horizon, skip_first_days = skip_first_days_1, probs = probs, ens_model = "ISW")
-  w_hat_ISW_2  <- weights_tibble(ensemble = ISW_2_ens, r = rr, models = models_orig, horizon = horizon, skip_first_days = skip_first_days_2, probs = probs, ens_model = "ISW")
-
+  w_hat_DISW_1 <- weights_tibble(ensemble = DISW_1_ens, r = rr, models = models_orig, horizon = horizon, skip_first_days = skip_first_days_1, probs = probs, ens_model = "DISW", horiz = horiz)
+  w_hat_DISW_2 <- weights_tibble(ensemble = DISW_2_ens, r = rr, models = models_orig, horizon = horizon, skip_first_days = skip_first_days_2, probs = probs, ens_model = "DISW", horiz = horiz)
+  w_hat_ISW_1  <- weights_tibble(ensemble = ISW_1_ens , r = rr, models = models_orig, horizon = horizon, skip_first_days = skip_first_days_1, probs = probs, ens_model = "ISW" , horiz = horiz)
+  w_hat_ISW_2  <- weights_tibble(ensemble = ISW_2_ens , r = rr, models = models_orig, horizon = horizon, skip_first_days = skip_first_days_2, probs = probs, ens_model = "ISW" , horiz = horiz)
+  #w_hat_DISW_1 <- w_hat_DISW_2 <- w_hat_ISW_1 <- w_hat_ISW_2
+  
   w_hat <- list(w_hat_DISW_1 = w_hat_DISW_1, w_hat_DISW_2 = w_hat_DISW_2, w_hat_ISW_1 = w_hat_ISW_1, w_hat_ISW_2 = w_hat_ISW_2)
   saveRDS(object = w_hat, file = w_hat_file)
 }
@@ -150,7 +171,7 @@ if (file.exists(w_hat_file)) {
 # Per horizon: `aggregate_total = FALSE` and `indep_quant = FALSE`
 
 aggregate_total <- FALSE
-indep_quant <- FALSE
+indep_quant <- TRUE
 
 formatted_w_hat_file <- paste("RESULTS/w_hat_per_horizon_size_", training_size, "_state_", state, "_age_", age, "_quant_", as.character(quant), "_horiz_", as.character(horiz), ".RDS", sep = "")
 

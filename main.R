@@ -6,8 +6,12 @@
 # post_processing  <- as.logical(args[5])
 # post_select_mod  <- args[6] 
 
-args <- commandArgs(trailingOnly = TRUE)
-all_states <- as.logical(args[1])
+#######################
+##### DELETE THIS #####
+# args <- commandArgs(trailingOnly = TRUE)
+# all_states <- as.logical(args[1])
+#######################
+#######################
 
 ##################################################
 
@@ -27,11 +31,11 @@ ignore_naive_ensemble_data <- TRUE # Remove naive ensembles from the data object
 quant <- TRUE # Weights depend (or not) on the quantiles
 horiz <- FALSE # Weights depend (or not) on the horizons # Only implemented for `TRUE` for stratified analysis
 
-post_processing <- FALSE
-post_select_mod <- "Epiforecasts"
+post_processing <- TRUE
+post_select_mod <- "KIT"
 
 state_idx <- 17 # c(1:16, 17)
-age_idx <- 7 # c(1:6, 7)
+age_idx <- 7    # c(1:6, 7)
 
 method <- "Mean" # c("Mean", "Median", "all_quant")
 
@@ -177,7 +181,6 @@ if (length(retrieved_data_files) == 1) {
   y_current <- retrieved_data$y_current 
   values    <- retrieved_data$values
   current   <- retrieved_data$current
-  
   
   if (reparameterize) { # Reparameterize the model
     
@@ -460,13 +463,13 @@ for (k in 1:length(days)) {
                                        values = values_ens,
                                        current = current_ens,
                                        ens_models = ens_models,
-                                       lower = -5,
-                                       upper =  5,
+                                       lower = -10,
+                                       upper =  10,
                                        quant = quant,
                                        horiz = horiz,
                                        probs = probs,
                                        short_grid_search = TRUE, 
-                                       by = 0.01)
+                                       by = 0.05)
       } else { stop("Choose a valid ensemble method.") }
 
       ensemble[[as.character(dt)]][[as.character(h)]] <- tmp_result
@@ -490,13 +493,13 @@ for (k in 1:length(days)) {
                                      values = values_ens,
                                      current = current_ens,
                                      ens_models = ens_models,
-                                     lower = -5,
-                                     upper =  5,
+                                     lower = -10,
+                                     upper =  10,
                                      quant = quant,
                                      horiz = horiz,
                                      probs = probs,
                                      short_grid_search = TRUE,
-                                     by = 0.01)
+                                     by = 0.05)
     }  else { stop("Choose a valid ensemble method.") }
 
     ensemble[[as.character(dt)]] <- tmp_result
@@ -509,13 +512,17 @@ for (k in 1:length(days)) {
   count <- count + 1
 }
 
+baseline <- baseline %>% filter(type == "quantile")
+new_data <- add_baseline_new_data(new_data = new_data, baseline = baseline, reparameterize = reparameterize)
+ensemble <- add_baseline_ensemble(ensemble = ensemble, baseline = bb, reparameterize = reparameterize, horiz = horiz)
+
 if (ens_method == "pinball") { unregister_dopar(); stopCluster(cl) }
 
 reparameterize_file <- ifelse(reparameterize, "new_", "")
 
 if ((length(state) == 1) & (length(age) == 1)) {
   fitted_model_file <- ifelse(post_processing,
-                              paste("RESULTS/FITTED_OBJECTS/POST_PROCESSED/", reparameterize_file, "post-processing_model_", ens_models, "_size_", training_size, "_skip_", as.character(skip_recent_days), "_state_", state, "_age_", age, "_quant_", as.character(quant), "_horiz_", as.character(horiz), ".RDS", sep = ""),
+                              paste("RESULTS/FITTED_OBJECTS/POST_PROCESSED/", reparameterize_file, method_files, "post-processing_model_", ens_models, "_size_", training_size, "_skip_", as.character(skip_recent_days), "_state_", state, "_age_", age, "_quant_", as.character(quant), "_horiz_", as.character(horiz), ".RDS", sep = ""),
                               paste("RESULTS/FITTED_OBJECTS/", reparameterize_file, method_files, "method_", ens_method, "_size_", training_size, "_skip_", as.character(skip_recent_days), "_state_", state, "_age_", age, "_quant_", as.character(quant), "_horiz_", as.character(horiz), ".RDS", sep = ""))
   saveRDS(object = list(ensemble = ensemble, new_data = new_data), file = fitted_model_file)
 } else {
