@@ -1,11 +1,3 @@
-# args <- commandArgs(trailingOnly = TRUE)
-# state_idx        <- as.numeric(args[1])
-# age_idx          <- as.numeric(args[2])
-# ens_method       <- args[3]
-# skip_recent_days <- as.logical(args[4])
-# post_processing  <- as.logical(args[5])
-# post_select_mod  <- args[6] 
-
 #######################
 ##### DELETE THIS #####
 # args <- commandArgs(trailingOnly = TRUE)
@@ -13,12 +5,16 @@
 #######################
 #######################
 
-args <- commandArgs(trailingOnly = TRUE)
-skip_recent_days <- as.logical(args[1])
-horiz            <- as.logical(args[2])
-post_select_mod  <- as.character(args[3])
-method           <- as.character(args[4])
-cluster_size     <- as.numeric(args[5])
+##################################################
+###### POST-PROCESSING ###########################
+##################################################
+
+# args <- commandArgs(trailingOnly = TRUE)
+# skip_recent_days <- as.logical(args[1])
+# horiz            <- as.logical(args[2])
+# post_select_mod  <- as.character(args[3])
+# method           <- as.character(args[4])
+# cluster_size     <- as.numeric(args[5])
 
 ##################################################
 
@@ -27,7 +23,7 @@ source("utils.R")
 source("aux.R")
 
 ens_method <- "pinball" # c("wis", "pinball")
-# skip_recent_days <- TRUE # c(TRUE, FALSE)
+skip_recent_days <- FALSE # c(TRUE, FALSE)
 
 training_size <- 90
 uncertain_size <- 40
@@ -36,15 +32,15 @@ exploratory_wis <- FALSE # Plotting score for all individual and naive ensemble 
 ignore_naive_ensemble_data <- TRUE # Remove naive ensembles from the data objects, so the trained models do not take them as inputs
 
 quant <- TRUE # Weights depend (or not) on the quantiles
-# horiz <- FALSE # Weights depend (or not) on the horizons # Only implemented for `TRUE` for stratified analysis
+horiz <- FALSE # Weights depend (or not) on the horizons # Only implemented for `TRUE` for stratified analysis
 
-post_processing <- TRUE
-# post_select_mod <- "KIT"
+post_processing <- FALSE
+post_select_mod <- "KIT"
 
 state_idx <- 17 # c(1:16, 17)
 age_idx <- 7    # c(1:6, 7)
 
-# method <- "Mean" # c("Mean", "Median", "all_quant")
+method <- "all_quant" # c("Mean", "Median", "all_quant")
 
 reparameterize <- TRUE
 
@@ -62,7 +58,7 @@ reparameterize <- TRUE
 #######################
 #######################
 
-# cluster_size <- 4
+cluster_size <- 4
 
 ##################################################
 # LOAD AND PRE-PROCESS DATA
@@ -524,7 +520,7 @@ for (k in 1:length(days)) {
 lim_days <- c(days[1], days[length(days)])
 baseline <- baseline %>% filter(type == "quantile", forecast_date >= lim_days[1], forecast_date <= lim_days[2])
 new_data <- add_baseline_new_data(new_data = new_data, baseline = baseline, reparameterize = reparameterize)
-ensemble <- add_baseline_ensemble(ensemble = ensemble, baseline = baseline, reparameterize = reparameterize, horiz = horiz)
+ensemble <- add_baseline_ensemble(ensemble = ensemble, baseline = baseline, reparameterize = reparameterize, horiz = (horiz | (ens_method == "wis")))
 
 if (ens_method == "pinball") { unregister_dopar(); stopCluster(cl) }
 

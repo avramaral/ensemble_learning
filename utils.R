@@ -1085,14 +1085,24 @@ ensemble_pinball <- function (y, y_current, values, current, ens_models = NULL, 
             if (method == "all_quant") {
               tmp_fancy_score <- rep(0, length(probs))
               for (q in 1:length(probs)) {
-                tmp_fancy_score[q] <- quantile_distance(q = values[[as.character(horizon[h])]][[n]][q], obs_vect = y[[as.character(horizon[h])]][n, ], q_level = probs[q]) ##### DOUBLE CHECK THE ARGUMENTS
+                tmp_fancy_score[q] <- quantile_distance(q = values[[as.character(horizon[h])]][[n]][q], obs_vect = y[[as.character(horizon[h])]][n, ], q_level = probs[q]) 
               }
               wis[count,   ] <-  tmp_fancy_score
             } else {
               wis[count,   ] <-  compute_wis(quant = values[[as.character(horizon[h])]][[n]], probs = probs, y = y[[as.character(horizon[h])]][n], average = (!quant))
             }
           } else {
-            wis[count, , ] <- apply(X = values[[as.character(horizon[h])]][[n]], MARGIN = 1, FUN = compute_wis, probs = probs, y = y[[as.character(horizon[h])]][n], average = (!quant)) |> t()
+            if (method == "all_quant") {
+              tmp_fancy_score <- matrix(0, nrow = length(ens_models), ncol = length(probs))
+              for (q in 1:length(probs)) {
+                for (m in 1:length(ens_models)) {
+                  tmp_fancy_score[m, q] <- quantile_distance(q = values[[as.character(horizon[h])]][[n]][m, q], obs_vect = y[[as.character(horizon[h])]][n, ], q_level = probs[q]) 
+                }
+              }
+              wis[count, , ] <- tmp_fancy_score
+            } else {
+              wis[count, , ] <- apply(X = values[[as.character(horizon[h])]][[n]], MARGIN = 1, FUN = compute_wis, probs = probs, y = y[[as.character(horizon[h])]][n], average = (!quant)) |> t()
+            }
           }
           count <- count + 1
         }
@@ -1410,7 +1420,7 @@ ensemble_ranked_unweighted <- function (y, y_current, values, current, n_ensembl
 ##################################################
 ##################################################
 
-grid_optim <- function (probs, values, y, q, quant, M, wis = NULL, by = 0.01, theta_lim = c(-10, 10), phi_lim = c(0.05, 5), horiz = TRUE, short_grid_search = TRUE, method = NULL, ...) {
+grid_optim <- function (probs, values, y, q, quant, M, wis = NULL, by = 0.01, theta_lim = c(-10, 10), phi_lim = c(0.05, 5.01), horiz = TRUE, short_grid_search = TRUE, method = NULL, ...) {
     
     if (M == 1) { 
       
@@ -1424,7 +1434,7 @@ grid_optim <- function (probs, values, y, q, quant, M, wis = NULL, by = 0.01, th
       
     } else {
       
-      theta <- seq(theta_lim[1], theta_lim[2], length.out = ((4 * 1 / by) + 1)) # length.out = ((2 * 1 / by) + 1)
+      theta <- seq(theta_lim[1], theta_lim[2], length.out = ((2 * 1 / by) + 1)) # length.out = ((4 * 1 / by) + 1)
       phi <- seq(phi_lim[1], phi_lim[2], by = by)
       
       pts <- expand.grid(theta, phi)
@@ -1610,7 +1620,6 @@ cost_function <- function (pars, probs, values, y, wis, q = 1, quant = FALSE, ho
       } else { 
         H <- length(values)
         N <- length(values[[1]])
-        
         ens_wis <- rep(0, (N * H))
       }
       
@@ -1625,8 +1634,12 @@ cost_function <- function (pars, probs, values, y, wis, q = 1, quant = FALSE, ho
         } else {
           if (horiz) {
             ens_wis[n] <- compute_wis(probs = probs, quant = w %*% values[[n]], y = y[n], average = (!quant))[q]  
-          } else { 
-            ens_wis[n] <- compute_wis(probs = probs, quant = w %*% values[[count_H]][[count_N]], y = y[[count_H]][count_N], average = (!quant))[q]  
+          } else {
+            if (method == "all_quant") {
+              ens_wis[n] <- quantile_distance(q = (w %*% values[[count_H]][[count_N]])[q], obs_vect = y[[count_H]][count_N, ], q_level = probs[q]) 
+            } else {
+              ens_wis[n] <- compute_wis(probs = probs, quant = w %*% values[[count_H]][[count_N]], y = y[[count_H]][count_N], average = (!quant))[q]   
+            }
           }
         }
         
