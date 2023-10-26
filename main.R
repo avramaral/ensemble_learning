@@ -22,11 +22,11 @@
 ###### ENSEMBLE ##################################
 ##################################################
 
-# args <- commandArgs(trailingOnly = TRUE)
-# skip_recent_days <- as.logical(args[1])
-# horiz            <- as.logical(args[2])
-# method           <- as.character(args[4])
-# cluster_size     <- as.numeric(args[5])
+args <- commandArgs(trailingOnly = TRUE)
+skip_recent_days <- as.logical(args[1])
+horiz            <- as.logical(args[2])
+method           <- as.character(args[3])
+cluster_size     <- as.numeric(args[4])
 
 ##################################################
 
