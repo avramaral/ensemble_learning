@@ -135,7 +135,7 @@ retrieve_data <- function (data, truth_data, naive_ensemble, models, horizon, st
 ##################################################
 ##################################################
 
-reparameterize_model <- function (y, y_current, values, current, baseline, state = "DE", age = "00+", ...) {
+reparameterize_model <- function (y, y_current, values, current, baseline, state = "DE", age = "00+", method = NULL, ...) {
 
   new_y <- list()
   new_y_current <- list()
@@ -162,11 +162,17 @@ reparameterize_model <- function (y, y_current, values, current, baseline, state
       new_current[[as.character(d)]][[as.character(h)]] <- list()
       
       avlb_training_size <- length(values[[as.character(d)]][[as.character(h)]])
+      if (!is.null(method)) { new_y[[as.character(d)]][[as.character(h)]] <- matrix(data = 0, nrow = avlb_training_size, ncol = length(probs)) }
+      
       for (i in 1:avlb_training_size) {
         b <- baseline %>% filter(location == state, age_group == age, forecast_date == (as.Date(d) - i), target == paste(h, " day ahead inc hosp", sep = ""), type == "quantile") %>% select(value) %>% c() %>% unlist() %>% unname()
         new_values[[as.character(d)]][[as.character(h)]][[i]] <- values[[as.character(d)]][[as.character(h)]][[i]] - b
       
-        new_y[[as.character(d)]][[as.character(h)]][i] <- y[[as.character(d)]][[as.character(h)]][i] - b[4]
+        if (is.null(method)) { 
+          new_y[[as.character(d)]][[as.character(h)]][i] <- y[[as.character(d)]][[as.character(h)]][i] - b[4]
+        } else { # For fancy score
+          new_y[[as.character(d)]][[as.character(h)]][i, ] <- y[[as.character(d)]][[as.character(h)]][i, ] - b[4]
+        }
       }
       
       b <- baseline %>% filter(location == state, age_group == age, forecast_date == d, target == paste(h, " day ahead inc hosp", sep = ""), type == "quantile") %>% select(value) %>% c() %>% unlist() %>% unname()
@@ -415,13 +421,19 @@ quantile_distance <- function (q, obs_vect, q_level, obs_levels = c(0.025, 0.1, 
   result
 }
 
-wis_distance <- function (q_vect, obs_vect, q_levels = c(0.025, 0.1, 0.25, 0.5, 0.75, 0.9, 0.975), obs_levels = c(0.025, 0.1, 0.25, 0.5, 0.75, 0.9, 0.975), ...) {
+wis_distance <- function (q_vect, obs_vect, q_levels = c(0.025, 0.1, 0.25, 0.5, 0.75, 0.9, 0.975), obs_levels = c(0.025, 0.1, 0.25, 0.5, 0.75, 0.9, 0.975), average = TRUE, ...) {
   k <- length(q_vect)
   # Compute quantile distances for each level
   qd_i <- function (i) { quantile_distance(q_vect[i], obs_vect, q_level = q_levels[i], obs_levels = obs_levels) }
   qds <- sapply(1:k, qd_i)
 
-  mean(qds)
+  if (average) {
+    r <- mean(qds)
+  } else {
+    r <- qds
+  }
+  
+  r
 }
 
 ##################################################
@@ -882,14 +894,14 @@ create_new_tibble <- function (...) {
 ##################################################
 ##################################################
 
-compute_ensemble <- function (ens_method, y, y_current, values, current, ens_models = NULL, weights = NULL, k = NULL, lower = -10, upper = 10, quant = TRUE, horiz = TRUE, probs = c(0.025, 0.100, 0.250, 0.500, 0.750, 0.900, 0.975), short_grid_search = TRUE, by = 0.01, n_ensemble_models = NULL, unweighted_method = NULL, ...) {
+compute_ensemble <- function (ens_method, y, y_current, values, current, ens_models = NULL, weights = NULL, k = NULL, lower = -10, upper = 10, quant = TRUE, horiz = TRUE, probs = c(0.025, 0.100, 0.250, 0.500, 0.750, 0.900, 0.975), short_grid_search = TRUE, by = 0.01, n_ensemble_models = NULL, unweighted_method = NULL, method = NULL, ...) {
   m <- ens_method[1]
   
   if (m == "wis") {
     res <- ensemble_wis(current = current, weights = weights, k = k)
   } else if (m == "pinball") {
     # if (!horiz) { current <- list(current) } 
-    res <- ensemble_pinball(y = y, y_current = y_current, values = values, current = current, ens_models = ens_models, lower = lower, upper = upper, quant = quant, horiz = horiz, probs = probs, short_grid_search = short_grid_search, by = by)
+    res <- ensemble_pinball(y = y, y_current = y_current, values = values, current = current, ens_models = ens_models, lower = lower, upper = upper, quant = quant, horiz = horiz, probs = probs, short_grid_search = short_grid_search, by = by, method = method)
   } else if (m == "ranked_unweighted") {
     res <- ensemble_ranked_unweighted(y = y, y_current = y_current, values = values, current = current, n_ensemble_models = n_ensemble_models, unweighted_method = unweighted_method, quant = quant, horiz = horiz)
   } else {
@@ -1012,8 +1024,8 @@ input_new_data <- function (new_data, ensemble, ens_method, h, state, age, day, 
 ##################################################
 ##################################################
 
-ensemble_pinball <- function (y, y_current, values, current, ens_models = NULL, lower = -10, upper = 10, quant = TRUE, horiz = TRUE, probs = c(0.025, 0.100, 0.250, 0.500, 0.750, 0.900, 0.975), short_grid_search = TRUE, by = 0.01, ...) {
-  
+ensemble_pinball <- function (y, y_current, values, current, ens_models = NULL, lower = -10, upper = 10, quant = TRUE, horiz = TRUE, probs = c(0.025, 0.100, 0.250, 0.500, 0.750, 0.900, 0.975), short_grid_search = TRUE, by = 0.01, method = NULL, ...) {
+
   if (!horiz & !quant) { stop("This combination of `quant` and `horiz` is not implemented.") }
   
   # H: number of horizons
@@ -1043,7 +1055,7 @@ ensemble_pinball <- function (y, y_current, values, current, ens_models = NULL, 
         wis <- array(data = 0, dim = c(N, M, length(probs)))
       } else {
         if (M == 1) {
-          wis <- array(data = 0, dim = c((N * H),    length(probs)))
+          wis <- array(data = 0, dim = c((N * H), length(probs)))
         } else {
           wis <- array(data = 0, dim = c((N * H), M, length(probs)))
         }
@@ -1056,7 +1068,7 @@ ensemble_pinball <- function (y, y_current, values, current, ens_models = NULL, 
         if (!quant) { # Missing implementation for more than one model
           wis[n, ] <- apply(X = values[[n]], MARGIN = 1, FUN = compute_wis, probs = probs, y = y[n], average = (!quant))  
         } else {
-          if (M == 1) { 
+          if (M == 1) {
             wis[n, , ] <- compute_wis(probs = probs, quant = values[[n]], y = y[n], average = (!quant))
           } else {
             wis[n, , ] <- apply(X = values[[n]], MARGIN = 1, FUN = compute_wis, probs = probs, y = y[n], average = (!quant)) |> t() 
@@ -1070,7 +1082,15 @@ ensemble_pinball <- function (y, y_current, values, current, ens_models = NULL, 
       for (n in 1:N) {
         for (h in 1:H) {
           if (M == 1) { # Post-processing
-            wis[count,   ] <-  compute_wis(quant = values[[as.character(horizon[h])]][[n]], probs = probs, y = y[[as.character(horizon[h])]][n], average = (!quant))
+            if (method == "all_quant") {
+              tmp_fancy_score <- rep(0, length(probs))
+              for (q in 1:length(probs)) {
+                tmp_fancy_score[q] <- quantile_distance(q = values[[as.character(horizon[h])]][[n]][q], obs_vect = y[[as.character(horizon[h])]][n, ], q_level = probs[q]) ##### DOUBLE CHECK THE ARGUMENTS
+              }
+              wis[count,   ] <-  tmp_fancy_score
+            } else {
+              wis[count,   ] <-  compute_wis(quant = values[[as.character(horizon[h])]][[n]][q], probs = probs, y = y[[as.character(horizon[h])]][n], average = (!quant))
+            }
           } else {
             wis[count, , ] <- apply(X = values[[as.character(horizon[h])]][[n]], MARGIN = 1, FUN = compute_wis, probs = probs, y = y[[as.character(horizon[h])]][n], average = (!quant)) |> t()
           }
@@ -1099,7 +1119,8 @@ ensemble_pinball <- function (y, y_current, values, current, ens_models = NULL, 
             if (is.null(dim(tmp_wis))) {
               tmp_wis <- t(as.matrix(tmp_wis)) 
             }
-            est_pars <- grid_optim(probs = probs, values = values, y = y, q = q, quant = quant, M = M, wis = tmp_wis, by = by, theta_lim = c(lower, upper), horiz = horiz, short_grid_search = short_grid_search)
+            #########################
+            est_pars <- grid_optim(probs = probs, values = values, y = y, q = q, quant = quant, M = M, wis = tmp_wis, by = by, theta_lim = c(lower, upper), horiz = horiz, short_grid_search = short_grid_search, method = method)
             phi[q] <- est_pars[1]
           }
         } else {
@@ -1108,7 +1129,7 @@ ensemble_pinball <- function (y, y_current, values, current, ens_models = NULL, 
             if (is.null(dim(tmp_wis))) {
               tmp_wis <- t(as.matrix(tmp_wis)) 
             }
-            est_pars <- grid_optim(probs = probs, values = values, y = y, q = q, quant = quant, M = M, wis = tmp_wis, by = by, theta_lim = c(lower, upper), horiz = horiz, short_grid_search = short_grid_search)
+            est_pars <- grid_optim(probs = probs, values = values, y = y, q = q, quant = quant, M = M, wis = tmp_wis, by = by, theta_lim = c(lower, upper), horiz = horiz, short_grid_search = short_grid_search, method = method)
             if (M == 1) {
               phi[q] <- est_pars[1]
             } else {
@@ -1226,7 +1247,7 @@ ensemble_pinball <- function (y, y_current, values, current, ens_models = NULL, 
           }
         }
 
-        est_pars <- grid_optim(probs = probs, values = values, y = y, q = q, quant = quant, M = M, wis = tmp_wis, by = by, theta_lim = c(lower, upper), horiz = horiz, short_grid_search = short_grid_search)
+        est_pars <- grid_optim(probs = probs, values = values, y = y, q = q, quant = quant, M = M, wis = tmp_wis, by = by, theta_lim = c(lower, upper), horiz = horiz, short_grid_search = short_grid_search, method = method)
         if (M == 1) {
           phi[q] <- est_pars[1]
         } else {
@@ -1389,13 +1410,13 @@ ensemble_ranked_unweighted <- function (y, y_current, values, current, n_ensembl
 ##################################################
 ##################################################
 
-grid_optim <- function (probs, values, y, q, quant, M, wis = NULL, by = 0.01, theta_lim = c(-10, 10), phi_lim = c(0.05, 5), horiz = TRUE, short_grid_search = TRUE, ...) {
+grid_optim <- function (probs, values, y, q, quant, M, wis = NULL, by = 0.01, theta_lim = c(-10, 10), phi_lim = c(0.05, 5), horiz = TRUE, short_grid_search = TRUE, method = NULL, ...) {
     
     if (M == 1) { 
       
       wis <- t(wis) 
-      pts <- seq(phi_lim[1], phi_lim[2], by = 0.05)
-      rsp <- foreach(i = 1:length(pts)) %dopar% { cost_function(pars = pts[i], probs = probs, values = values, y = y, wis = wis, q = q, quant = quant, horiz = horiz) } 
+      pts <- seq(phi_lim[1], phi_lim[2], by = by)
+      rsp <- foreach(i = 1:length(pts)) %dopar% { cost_function(pars = pts[i], probs = probs, values = values, y = y, wis = wis, q = q, quant = quant, horiz = horiz, method = method) } 
       pts <- cbind(pts, unlist(rsp))
       colnames(pts) <- c("phi", "cost")
       pos <- which.min(pts[, 2])
@@ -1421,21 +1442,21 @@ grid_optim <- function (probs, values, y, q, quant, M, wis = NULL, by = 0.01, th
           if (count == 1) {
             # phi = 1
             tmp_pts_1 <- pts[pts[, 2] == phi[phi_1], ]
-            tmp_rsp_1 <- foreach(i = 1:nrow(tmp_pts_1)) %dopar% { cost_function(pars = unlist(c(tmp_pts_1[i, ])), probs = probs, values = values, y = y, wis = wis, q = q, quant = quant, horiz = horiz) }
+            tmp_rsp_1 <- foreach(i = 1:nrow(tmp_pts_1)) %dopar% { cost_function(pars = unlist(c(tmp_pts_1[i, ])), probs = probs, values = values, y = y, wis = wis, q = q, quant = quant, horiz = horiz, method = method) }
             tmp_min_1 <- min(unlist(tmp_rsp_1))
             tmp_par_1 <- c(unlist(c(tmp_pts_1[which.min(unlist(tmp_rsp_1)), 1:2])), tmp_min_1)
             names(tmp_par_1) <- c("theta", "phi", "cost")
             
             # before phi = 1
             tmp_pts_b <- pts[pts[, 2] == phi[phi_1 - i], ]
-            tmp_rsp_b <- foreach(i = 1:nrow(tmp_pts_b)) %dopar% { cost_function(pars = unlist(c(tmp_pts_b[i, ])), probs = probs, values = values, y = y, wis = wis, q = q, quant = quant, horiz = horiz) }
+            tmp_rsp_b <- foreach(i = 1:nrow(tmp_pts_b)) %dopar% { cost_function(pars = unlist(c(tmp_pts_b[i, ])), probs = probs, values = values, y = y, wis = wis, q = q, quant = quant, horiz = horiz, method = method) }
             tmp_min_b <- min(unlist(tmp_rsp_b))
             tmp_par_b <- c(unlist(c(tmp_pts_b[which.min(unlist(tmp_rsp_b)), 1:2])), tmp_min_b)
             names(tmp_par_b) <- c("theta", "phi", "cost")
             
             # after  phi = 1
             tmp_pts_a <- pts[pts[, 2] == phi[phi_1 + i], ]
-            tmp_rsp_a <- foreach(i = 1:nrow(tmp_pts_a)) %dopar% { cost_function(pars = unlist(c(tmp_pts_a[i, ])), probs = probs, values = values, y = y, wis = wis, q = q, quant = quant, horiz = horiz) }
+            tmp_rsp_a <- foreach(i = 1:nrow(tmp_pts_a)) %dopar% { cost_function(pars = unlist(c(tmp_pts_a[i, ])), probs = probs, values = values, y = y, wis = wis, q = q, quant = quant, horiz = horiz, method = method) }
             tmp_min_a <- min(unlist(tmp_rsp_a))
             tmp_par_a <- c(unlist(c(tmp_pts_a[which.min(unlist(tmp_rsp_a)), 1:2])), tmp_min_a)
             names(tmp_par_a) <- c("theta", "phi", "cost")
@@ -1447,7 +1468,7 @@ grid_optim <- function (probs, values, y, q, quant, M, wis = NULL, by = 0.01, th
           } else if ((before == TRUE ) & (after == FALSE)) {
             
             tmp_pts_b <- pts[pts[, 2] == phi[phi_1 - i], ]
-            tmp_rsp_b <- foreach(i = 1:nrow(tmp_pts_b)) %dopar% { cost_function(pars = unlist(c(tmp_pts_b[i, ])), probs = probs, values = values, y = y, wis = wis, q = q, quant = quant, horiz = horiz) }
+            tmp_rsp_b <- foreach(i = 1:nrow(tmp_pts_b)) %dopar% { cost_function(pars = unlist(c(tmp_pts_b[i, ])), probs = probs, values = values, y = y, wis = wis, q = q, quant = quant, horiz = horiz, method = method) }
             tmp_min_b <- min(unlist(tmp_rsp_b))
             tmp_par_b <- c(unlist(c(tmp_pts_b[which.min(unlist(tmp_rsp_b)), 1:2])), tmp_min_b)
             names(tmp_par_b) <- c("theta", "phi", "cost")
@@ -1464,7 +1485,7 @@ grid_optim <- function (probs, values, y, q, quant, M, wis = NULL, by = 0.01, th
           } else if ((before == FALSE) & (after == TRUE )) {
             
             tmp_pts_a <- pts[pts[, 2] == phi[phi_1 + i], ]
-            tmp_rsp_a <- foreach(i = 1:nrow(tmp_pts_a)) %dopar% { cost_function(pars = unlist(c(tmp_pts_a[i, ])), probs = probs, values = values, y = y, wis = wis, q = q, quant = quant, horiz = horiz) }
+            tmp_rsp_a <- foreach(i = 1:nrow(tmp_pts_a)) %dopar% { cost_function(pars = unlist(c(tmp_pts_a[i, ])), probs = probs, values = values, y = y, wis = wis, q = q, quant = quant, horiz = horiz, method = method) }
             tmp_min_a <- min(unlist(tmp_rsp_a))
             tmp_par_a <- c(unlist(c(tmp_pts_a[which.min(unlist(tmp_rsp_a)), 1:2])), tmp_min_a)
             names(tmp_par_a) <- c("theta", "phi", "cost")
@@ -1488,7 +1509,7 @@ grid_optim <- function (probs, values, y, q, quant, M, wis = NULL, by = 0.01, th
         result <- tmp_par
       } else {
         
-        rsp <- foreach(i = 1:nrow(pts)) %dopar% { cost_function(pars = unlist(c(pts[i, ])), probs = probs, values = values, y = y, wis = wis, q = q, quant = quant, horiz = horiz) } 
+        rsp <- foreach(i = 1:nrow(pts)) %dopar% { cost_function(pars = unlist(c(pts[i, ])), probs = probs, values = values, y = y, wis = wis, q = q, quant = quant, horiz = horiz, method = method) } 
         
         pts <- cbind(pts, unlist(rsp))
         colnames(pts) <- c("theta", "phi", "cost")
@@ -1540,7 +1561,7 @@ elementwise_avg_3d <- function (my_list, ...) {
   result
 }
 
-cost_function <-  function (pars, probs, values, y, wis, q = 1, quant = FALSE, horiz = TRUE, ...) {
+cost_function <- function (pars, probs, values, y, wis, q = 1, quant = FALSE, horiz = TRUE, method = NULL, ...) {
   
   if (!is.list(wis)) { # National level
     
@@ -1565,7 +1586,11 @@ cost_function <-  function (pars, probs, values, y, wis, q = 1, quant = FALSE, h
         if (horiz) {
           ens_wis[n] <- compute_wis(probs = probs, quant = w %*% values[[n]], y = y[n], average = (!quant))[q]  
         } else {
-          ens_wis[n] <- compute_wis(probs = probs, quant = w %*% values[[count_H]][[count_N]], y = y[[count_H]][count_N], average = (!quant))[q]  
+          if (method == "all_quant") {
+            ens_wis[n] <- quantile_distance(q = (w %*% values[[count_H]][[count_N]])[q], obs_vect = y[[count_H]][count_N, ], q_level = probs[q]) ##### DOUBLE CHECK THE ARGUMENTS
+          } else {
+            ens_wis[n] <- compute_wis(probs = probs, quant = w %*% values[[count_H]][[count_N]], y = y[[count_H]][count_N], average = (!quant))[q]
+          }
         }
         
         count_N <- count_N + 1
@@ -1575,7 +1600,7 @@ cost_function <-  function (pars, probs, values, y, wis, q = 1, quant = FALSE, h
         }
       }
       
-    } else {
+    } else { # Ensemble
       theta <- pars[1]
       phi   <- pars[2]
       

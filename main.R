@@ -36,7 +36,7 @@ exploratory_wis <- FALSE # Plotting score for all individual and naive ensemble 
 ignore_naive_ensemble_data <- TRUE # Remove naive ensembles from the data objects, so the trained models do not take them as inputs
 
 quant <- TRUE # Weights depend (or not) on the quantiles
-# horiz <- TRUE # Weights depend (or not) on the horizons # Only implemented for `TRUE` for stratified analysis
+# horiz <- FALSE # Weights depend (or not) on the horizons # Only implemented for `TRUE` for stratified analysis
 
 post_processing <- TRUE
 # post_select_mod <- "KIT"
@@ -44,7 +44,7 @@ post_processing <- TRUE
 state_idx <- 17 # c(1:16, 17)
 age_idx <- 7    # c(1:6, 7)
 
-# method <- "Mean" # c("Mean", "Median", "all_quant")
+# method <- "all_quant" # c("Mean", "Median", "all_quant")
 
 reparameterize <- TRUE
 
@@ -194,7 +194,7 @@ if (length(retrieved_data_files) == 1) {
     new_retrieved_data_file <- paste("DATA/TRAINING/new_retrieved_data_", method_files, "training_size_", training_size, "_state_", state, "_age_", age, ".RDS", sep = "")
     if (!file.exists(new_retrieved_data_file)) {
       
-      new_retrieved_data <- reparameterize_model(y = y, y_current = y_current, value = values, current = current, baseline = baseline) 
+      new_retrieved_data <- reparameterize_model(y = y, y_current = y_current, value = values, current = current, baseline = baseline, method = ifelse(method == "all_quant", "all_quant", NULL)) 
       
       saveRDS(object = new_retrieved_data, file = new_retrieved_data_file)
     } else {
@@ -418,10 +418,10 @@ count <- 1
 if (ens_method == "pinball") {
   cl <- makeCluster(cluster_size)
   registerDoParallel(cl = cl)
-  clusterExport(cl, c("cost_function", "par_weights_scale", "compute_wis", "mpfr", "elementwise_avg", "elementwise_avg_3d"), envir = environment()) # Include exported functions
+  clusterExport(cl, c("cost_function", "par_weights_scale", "compute_wis", "mpfr", "elementwise_avg", "elementwise_avg_3d", "quantile_distance"), envir = environment()) # Include exported functions
 }
 
-for (k in 1:length(days)) {
+for (k in 1:15) {
   dt <- days[k]
   print(paste(dt, " (", sprintf("%03d", count), "/", sprintf("%03d", length(days)), ")", sep = ""))
 
@@ -476,7 +476,8 @@ for (k in 1:length(days)) {
                                        horiz = horiz,
                                        probs = probs,
                                        short_grid_search = TRUE, 
-                                       by = 0.05)
+                                       by = 0.01,
+                                       method = method)
       } else { stop("Choose a valid ensemble method.") }
 
       ensemble[[as.character(dt)]][[as.character(h)]] <- tmp_result
@@ -506,7 +507,8 @@ for (k in 1:length(days)) {
                                      horiz = horiz,
                                      probs = probs,
                                      short_grid_search = TRUE,
-                                     by = 0.05)
+                                     by = 0.01,
+                                     method = method)
     }  else { stop("Choose a valid ensemble method.") }
 
     ensemble[[as.character(dt)]] <- tmp_result
@@ -519,9 +521,10 @@ for (k in 1:length(days)) {
   count <- count + 1
 }
 
-baseline <- baseline %>% filter(type == "quantile")
+lim_days <- c(days[1], days[length(days)])
+baseline <- baseline %>% filter(type == "quantile", forecast_date >= lim_days[1], forecast_date <= lim_days[2])
 new_data <- add_baseline_new_data(new_data = new_data, baseline = baseline, reparameterize = reparameterize)
-ensemble <- add_baseline_ensemble(ensemble = ensemble, baseline = bb, reparameterize = reparameterize, horiz = horiz)
+ensemble <- add_baseline_ensemble(ensemble = ensemble, baseline = baseline, reparameterize = reparameterize, horiz = horiz)
 
 if (ens_method == "pinball") { unregister_dopar(); stopCluster(cl) }
 
