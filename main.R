@@ -35,7 +35,7 @@
 args <- commandArgs(trailingOnly = TRUE)
 horiz             <- as.logical(args[1])
 n_ensemble_models <- as.numeric(args[2])
-unweighted_method <- as.character(args[3])
+unweighted_method <- as.character(args[3]) 
 
 ##################################################
 
