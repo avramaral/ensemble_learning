@@ -22,11 +22,20 @@
 ###### ENSEMBLE ##################################
 ##################################################
 
+# args <- commandArgs(trailingOnly = TRUE)
+# skip_recent_days <- as.logical(args[1])
+# horiz            <- as.logical(args[2])
+# method           <- as.character(args[3])
+# cluster_size     <- as.numeric(args[4])
+
+##################################################
+###### HIGHEST RANKED ############################
+##################################################
+
 args <- commandArgs(trailingOnly = TRUE)
-skip_recent_days <- as.logical(args[1])
-horiz            <- as.logical(args[2])
-method           <- as.character(args[3])
-cluster_size     <- as.numeric(args[4])
+horiz             <- as.logical(args[1])
+n_ensemble_models <- as.numeric(args[2])
+unweighted_method <- as.character(args[3])
 
 ##################################################
 
@@ -34,8 +43,8 @@ source("header.R")
 source("utils.R")
 source("aux.R")
 
-ens_method <- "pinball" # c("wis", "pinball")
-# skip_recent_days <- FALSE # c(TRUE, FALSE)
+ens_method <- "ranked_unweighted" # c("wis", "pinball", "ranked_unweighted")
+skip_recent_days <- FALSE # c(TRUE, FALSE)
 
 training_size <- 90
 uncertain_size <- 40
@@ -44,7 +53,7 @@ exploratory_wis <- FALSE # Plotting score for all individual and naive ensemble 
 ignore_naive_ensemble_data <- TRUE # Remove naive ensembles from the data objects, so the trained models do not take them as inputs
 
 quant <- TRUE # Weights depend (or not) on the quantiles
-# horiz <- FALSE # Weights depend (or not) on the horizons # Only implemented for `TRUE` for stratified analysis
+# horiz <- FALSE # Weights depend (or not) on the horizons
 
 post_processing <- FALSE
 post_select_mod <- "KIT"
@@ -52,12 +61,18 @@ post_select_mod <- "KIT"
 state_idx <- 17 # c(1:16, 17)
 age_idx <- 7    # c(1:6, 7)
 
-# method <- "all_quant" # c("Mean", "Median", "all_quant")
+method <- "Mean" # c("Mean", "Median", "all_quant")
 
 reparameterize <- TRUE
 
-#######################
-##### DELETE THIS #####
+########################
+# Ranked unweighted pars
+# n_ensemble_models <- 2 # 1:8
+# unweighted_method <- "Mean" # c("Mean", "Median")
+########################
+
+########################
+##### DELETE THIS ######
 # if (all_states) {
 #   state_idx <- 1:16 
 #   age_idx <- 7 
@@ -67,10 +82,10 @@ reparameterize <- TRUE
 #   age_idx <- 1:6 
 #   cluster_size <- 32
 # }
-#######################
-#######################
+########################
+########################
 
-# cluster_size <- 4
+cluster_size <- 4
 
 ##################################################
 # LOAD AND PRE-PROCESS DATA
@@ -485,7 +500,9 @@ for (k in 1:length(days)) {
                                        probs = probs,
                                        short_grid_search = TRUE, 
                                        by = 0.01,
-                                       method = method)
+                                       method = method,
+                                       n_ensemble_models = n_ensemble_models,
+                                       unweighted_method = unweighted_method)
       } else { stop("Choose a valid ensemble method.") }
 
       ensemble[[as.character(dt)]][[as.character(h)]] <- tmp_result
@@ -502,7 +519,7 @@ for (k in 1:length(days)) {
     current_ens <- current[[as.character(dt)]]
     values_ens  <-  values[[as.character(dt)]]
 
-    if (ens_method == "pinball") {
+    if (ens_method %in% c("pinball", "ranked_unweighted")) {
       tmp_result <- compute_ensemble(ens_method = ens_method,
                                      y = y[[as.character(dt)]],
                                      y_current = y_current[[as.character(dt)]],
@@ -516,7 +533,9 @@ for (k in 1:length(days)) {
                                      probs = probs,
                                      short_grid_search = TRUE,
                                      by = 0.01,
-                                     method = method)
+                                     method = method,
+                                     n_ensemble_models = n_ensemble_models,
+                                     unweighted_method = unweighted_method)
     }  else { stop("Choose a valid ensemble method.") }
 
     ensemble[[as.character(dt)]] <- tmp_result

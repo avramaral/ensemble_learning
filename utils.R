@@ -1312,7 +1312,7 @@ ensemble_pinball <- function (y, y_current, values, current, ens_models = NULL, 
 ##################################################
 ##################################################
 
-ensemble_ranked_unweighted <- function (y, y_current, values, current, n_ensemble_models, unweighted_method = "mean", ...) {
+ensemble_ranked_unweighted <- function (y, y_current, values, current, n_ensemble_models, unweighted_method = "Mean", ...) {
   
   if (horiz) { 
     N <- length(values)
@@ -1390,14 +1390,14 @@ ensemble_ranked_unweighted <- function (y, y_current, values, current, n_ensembl
   
   for (q in 1:length(probs)) {
     if (horiz) {
-      if (unweighted_method == "mean") {
+      if (unweighted_method == "Mean") {
         nowcast[q] <- mean(current[, q][which(w[q, ] > 0)], na.rm = TRUE)
       } else {
         nowcast[q] <- median(current[, q][which(w[q, ] > 0)], na.rm = TRUE)
       }
     } else {
       for (h in 1:H) {
-        if (unweighted_method == "mean") {
+        if (unweighted_method == "Mean") {
           tmp_nowcast <- mean(current[[as.character(horizon[h])]][[1]][, q][which(w[q, ] > 0)], na.rm = TRUE)
         } else {
           tmp_nowcast <- median(current[[as.character(horizon[h])]][[1]][, q][which(w[q, ] > 0)], na.rm = TRUE)
