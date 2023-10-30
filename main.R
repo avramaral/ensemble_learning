@@ -1,10 +1,3 @@
-#######################
-##### DELETE THIS #####
-# args <- commandArgs(trailingOnly = TRUE)
-# all_states <- as.logical(args[1])
-#######################
-#######################
-
 ##################################################
 ###### POST-PROCESSING ###########################
 ##################################################
@@ -32,10 +25,19 @@
 ###### HIGHEST RANKED ############################
 ##################################################
 
-args <- commandArgs(trailingOnly = TRUE)
-horiz             <- as.logical(args[1])
-n_ensemble_models <- as.numeric(args[2])
-unweighted_method <- as.character(args[3]) 
+# args <- commandArgs(trailingOnly = TRUE)
+# horiz             <- as.logical(args[1])
+# n_ensemble_models <- as.numeric(args[2])
+# unweighted_method <- as.character(args[3])
+
+##################################################
+
+##################################################
+###### STRATIFIED ANALYSIS #######################
+##################################################
+
+# args <- commandArgs(trailingOnly = TRUE)
+# strata <- as.character(args[1])
 
 ##################################################
 
@@ -43,7 +45,7 @@ source("header.R")
 source("utils.R")
 source("aux.R")
 
-ens_method <- "ranked_unweighted" # c("wis", "pinball", "ranked_unweighted")
+ens_method <- "wis" # c("wis", "pinball", "ranked_unweighted")
 skip_recent_days <- FALSE # c(TRUE, FALSE)
 
 training_size <- 90
@@ -53,38 +55,35 @@ exploratory_wis <- FALSE # Plotting score for all individual and naive ensemble 
 ignore_naive_ensemble_data <- TRUE # Remove naive ensembles from the data objects, so the trained models do not take them as inputs
 
 quant <- TRUE # Weights depend (or not) on the quantiles
-# horiz <- FALSE # Weights depend (or not) on the horizons
+horiz <- TRUE # Weights depend (or not) on the horizons
 
 post_processing <- FALSE
 post_select_mod <- "KIT"
 
-state_idx <- 17 # c(1:16, 17)
-age_idx <- 7    # c(1:6, 7)
+method <- "Mean" # c("Mean", "Median", "all_quant") # How to summarize the recent past
 
-method <- "Mean" # c("Mean", "Median", "all_quant")
+strata <- "states" # c("states", "ages", "all")
 
-reparameterize <- TRUE
+if (strata == "states") {
+  state_idx <- 1:16
+  age_idx <- 7
+  cluster_size <- 64
+} else if (strata == "ages") {
+  state_idx <- 17
+  age_idx <- 1:6
+  cluster_size <- 32
+} else {
+  state_idx <- 17 
+  age_idx <- 7  
+}
 
 ########################
 # Ranked unweighted pars
-# n_ensemble_models <- 2 # 1:8
-# unweighted_method <- "Mean" # c("Mean", "Median")
+n_ensemble_models <- 1 # 1:8
+unweighted_method <- "Mean" # c("Mean", "Median")
 ########################
 
-########################
-##### DELETE THIS ######
-# if (all_states) {
-#   state_idx <- 1:16 
-#   age_idx <- 7 
-#   cluster_size <- 64
-# } else {
-#   state_idx <- 17 
-#   age_idx <- 1:6 
-#   cluster_size <- 32
-# }
-########################
-########################
-
+reparameterize <- TRUE # Model the difference if `TRUE`
 cluster_size <- 4
 
 ##################################################
@@ -141,6 +140,7 @@ probs <- c(0.025, 0.100, 0.250, 0.500, 0.750, 0.900, 0.975)
 
 KIT_frozen_baseline <- KIT_frozen_baseline %>% filter(forecast_date >= r[1], forecast_date <= r[2], age_group %in% age, location %in% state)
 baseline <- KIT_frozen_baseline
+if (length(state) == 16) { baseline <- fix_baseline(baseline) }
 
 ##################################################
 # UNTRAINED ENSEMBLE
@@ -231,7 +231,6 @@ if (length(retrieved_data_files) == 1) {
     
   }
   
-  
   if (post_processing) { # Select just one model (`ens_models`) for post-processing
     new_tmp_data <- process_data_ignore_models(current = current, values = values, idx_models = idx_post)
     
@@ -279,12 +278,12 @@ if (length(retrieved_data_files) == 1) {
       if (!file.exists(new_retrieved_data_file)) {
         
         if (length(state) > 1) {
-          tmp_state <- state[1]
+          tmp_state <- state[i]
           tmp_age   <- age
         } else if (length(age) > 1) {
           tmp_state <- state
-          tmp_age   <- age[1]
-        }
+          tmp_age   <- age[i]
+        } else { stop("Error.") }
         
         new_retrieved_data <- reparameterize_model(y = y[[i]], y_current = y_current[[i]], values = values[[i]], current = current[[i]], baseline = baseline, state = tmp_state, age = tmp_age) 
       
@@ -486,7 +485,7 @@ for (k in 1:length(days)) {
         } else {
           tmp_result <- compute_ensemble(ens_method = ens_method, current = current_ens, weights = weights, k = k)
         }
-      } else if (ens_method == "pinball") {
+      } else if (ens_method %in% c("pinball", "ranked_unweighted")) {
         tmp_result <- compute_ensemble(ens_method = ens_method,
                                        y = y_tmp,
                                        y_current = y_current_tmp,
@@ -556,11 +555,12 @@ ensemble <- add_baseline_ensemble(ensemble = ensemble, baseline = baseline, repa
 if (ens_method == "pinball") { unregister_dopar(); stopCluster(cl) }
 
 reparameterize_file <- ifelse(reparameterize, "new_", "")
+ranked_file <- ifelse(ens_method == "ranked_unweighted", paste("_", unweighted_method, "_", n_ensemble_models, sep = ""), "")
 
 if ((length(state) == 1) & (length(age) == 1)) {
   fitted_model_file <- ifelse(post_processing,
                               paste("RESULTS/FITTED_OBJECTS/POST_PROCESSED/", reparameterize_file, method_files, "post-processing_model_", ens_models, "_size_", training_size, "_skip_", as.character(skip_recent_days), "_state_", state, "_age_", age, "_quant_", as.character(quant), "_horiz_", as.character(horiz), ".RDS", sep = ""),
-                              paste("RESULTS/FITTED_OBJECTS/", reparameterize_file, method_files, "method_", ens_method, "_size_", training_size, "_skip_", as.character(skip_recent_days), "_state_", state, "_age_", age, "_quant_", as.character(quant), "_horiz_", as.character(horiz), ".RDS", sep = ""))
+                              paste("RESULTS/FITTED_OBJECTS/", reparameterize_file, method_files, "method_", ens_method, ranked_file, "_size_", training_size, "_skip_", as.character(skip_recent_days), "_state_", state, "_age_", age, "_quant_", as.character(quant), "_horiz_", as.character(horiz), ".RDS", sep = ""))
   saveRDS(object = list(ensemble = ensemble, new_data = new_data), file = fitted_model_file)
 } else {
   if (length(state) != 1) {

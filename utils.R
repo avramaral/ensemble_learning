@@ -1965,3 +1965,25 @@ add_baseline_ensemble <- function (ensemble, baseline = NULL, reparameterize = F
 ##################################################
 ##################################################
 ##################################################
+
+fix_baseline <- function (baseline, ...) {
+  
+  # Fix the missing data for "DE-HH" with the most recent available count
+  missing_dates <- c("2022-01-31", "2022-02-01", "2022-02-08")
+  
+  for (m in 1:length(missing_dates)) {
+    m <- as.Date(missing_dates[m])
+    previous <- ifelse(m == as.Date("2022-02-01"), 2, 1)
+    base_tmp <- baseline[baseline$location == "DE-HH" & baseline$age_group == "00+" & baseline$forecast_date == (m - previous), ]
+    base_tmp$forecast_date <- base_tmp$forecast_date + previous
+    base_tmp$target_end_date <- base_tmp$target_end_date + previous
+    baseline <- rbind(baseline, base_tmp) %>% arrange(location, age_group, forecast_date, target_end_date)
+  }
+  
+  baseline
+  
+}
+
+##################################################
+##################################################
+##################################################
