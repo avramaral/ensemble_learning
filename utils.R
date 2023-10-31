@@ -452,7 +452,7 @@ compute_wis_truth <- function (data, truth_data, models, horizon, start_date, en
   wis_over_avg <- rep(0, length(models))
   wis_undr_avg <- rep(0, length(models))
   
-  if (!verbose) { b <- txtProgressBar(min = 1, max = length(horizon), initial = 1) }
+  # if (!verbose) { b <- txtProgressBar(min = 1, max = length(horizon), initial = 1) }
   
   count <- 1
   for (h in horizon) {
@@ -471,10 +471,10 @@ compute_wis_truth <- function (data, truth_data, models, horizon, start_date, en
     wis_undr_avg <- wis_undr_avg + wis_undr[[as.character(h)]]
     
     count <- count + 1
-    if (!verbose) { setTxtProgressBar(b, count) }
+    # if (!verbose) { setTxtProgressBar(b, count) }
   }
   
-  if (!verbose) { close(b) }
+  # if (!verbose) { close(b) }
   
   wis_summ_avg <- wis_summ_avg / length(horizon)
   wis_sprd_avg <- wis_sprd_avg / length(horizon)
@@ -979,7 +979,7 @@ ensemble_wis <- function (current, weights, k = NULL,...) {
 ##################################################
 
 input_new_data <- function (new_data, ensemble, ens_method, h, state, age, day, horizon = -28:0, probs = c(0.025, 0.100, 0.250, 0.500, 0.750, 0.900, 0.975), horiz = TRUE, ...) {
-  
+
   name_method <- ifelse(ens_method == "wis", "DISW", "ISW")
   
   if (horiz) {
@@ -1009,11 +1009,31 @@ input_new_data <- function (new_data, ensemble, ens_method, h, state, age, day, 
       }
     }
   } else {
-    for (i in 1:length(horizon)) {
-      for (q in 1:length(probs)) {
-        value <- ensemble[[as.character(dt)]]$nowcast[as.character(horizon[i]), q]
-        new_data <- new_data |> add_row(location = state, age_group = age, forecast_date = dt, target_end_date = (dt + horizon[i]), target = paste(horizon[i], " day ahead inc hosp", sep = ""), type = "quantile", quantile =  probs[q], value = value, pathogen = "COVID-19", model = name_method, retrospective = FALSE)
+    
+    if (!is.list(ensemble[[as.character(dt)]]$nowcast)) { # `nowcast` is not a list
+      
+      for (i in 1:length(horizon)) {
+        for (q in 1:length(probs)) {
+          value <- ensemble[[as.character(dt)]]$nowcast[as.character(horizon[i]), q]
+          new_data <- new_data |> add_row(location = state, age_group = age, forecast_date = dt, target_end_date = (dt + horizon[i]), target = paste(horizon[i], " day ahead inc hosp", sep = ""), type = "quantile", quantile =  probs[q], value = value, pathogen = "COVID-19", model = name_method, retrospective = FALSE)
+        }
       }
+      
+    } else { # `nowcast` is a list
+     
+      for (s in 1:length(ensemble[[as.character(dt)]]$nowcast)) {
+        for (i in 1:length(horizon)) {
+          for (q in 1:length(probs)) {
+            value <- ensemble[[as.character(dt)]]$nowcast[[s]][as.character(horizon[i]), q]
+            if (length(state) > 1) {
+              new_data <- new_data |> add_row(location = state[s], age_group = age, forecast_date = dt, target_end_date = (dt + horizon[i]), target = paste(horizon[i], " day ahead inc hosp", sep = ""), type = "quantile", quantile =  probs[q], value = value, pathogen = "COVID-19", model = name_method, retrospective = FALSE)
+            } else if (length(age) > 1) {
+              new_data <- new_data |> add_row(location = state, age_group = age[s], forecast_date = dt, target_end_date = (dt + horizon[i]), target = paste(horizon[i], " day ahead inc hosp", sep = ""), type = "quantile", quantile =  probs[q], value = value, pathogen = "COVID-19", model = name_method, retrospective = FALSE)
+            } else { stop("Error.") }
+          }
+        }
+      }
+      
     }
   }
   
@@ -1033,6 +1053,7 @@ ensemble_pinball <- function (y, y_current, values, current, ens_models = NULL, 
   # M: number of models
   
   if (!is.list(y_current) | length(y_current) == 29) { # National level
+    
     if (horiz) { # Weights depend on the horizons
       N <- length(values)
       M <- nrow(values[[1]])
@@ -1209,7 +1230,8 @@ ensemble_pinball <- function (y, y_current, values, current, ens_models = NULL, 
     
     ##################################################
     
-  } else { # Stratified analysis (not implemented if the weights do not depend on the horizons)
+  } else { # Stratified analysis 
+    
     if (horiz) {
       S <- length(values) # Number of strata
       N <- length(values[[1]])
@@ -1218,22 +1240,46 @@ ensemble_pinball <- function (y, y_current, values, current, ens_models = NULL, 
         M <- 1
       }
     } else {
-      # TBD
-      stop("Not implemented.")
+      S <- length(values)
+      names_S <- names(values)
+      H <- length(values[[1]])
+      N <- length(values[[1]][[1]])
+      M <- nrow(values[[1]][[1]][[1]])
+      if (is.null(M)) {
+        M <- 1
+      }
     }
     
+    if (!quant) { stop("Not implemented. The weights 'must' depend on the quantiles.") }
+    if (M == 1) { stop("Post-processed is not implemented for stratified analysis.") }
+    if (method == "all_quant") { stop("Optimization based on the 'fancy score' is not implemented.") }
+  
     wis <- list()
     for (s in 1:S) {
-      wis[[s]] <- array(data = 0, dim = c(N, M, length(probs)))
+      if (horiz) { # Weights depend on the horizons
+        wis[[s]] <- array(data = 0, dim = c(N, M, length(probs)))
+      } else {
+        wis[[s]] <- array(data = 0, dim = c((N * H), M, length(probs)))
+      }
     }
-    
+
     # Compute the score (WIS)
-    for (s in 1:S) {
-      for (n in 1:N) {
-        if (M == 1) { # The post-processing implementation for stratified analysis is incomplete 
-          wis[[s]][n, , ] <- compute_wis(probs = probs, quant = values[[s]][[n]], y = y[[s]][n], average = (!quant))
-        } else {
+    if (horiz) {
+      for (s in 1:S) {
+        for (n in 1:N) {
           wis[[s]][n, , ] <- apply(X = values[[s]][[n]], MARGIN = 1, FUN = compute_wis, probs = probs, y = y[[s]][n], average = (!quant)) |> t() 
+        }
+      }
+    } else {
+      horizon <- as.numeric(names(y[[1]]))
+      
+      for (s in 1:S) {
+        count <- 1
+        for (n in 1:N) {
+          for (h in 1:H) {
+            wis[[s]][count, , ] <- apply(X = values[[s]][[as.character(horizon[h])]][[n]], MARGIN = 1, FUN = compute_wis, probs = probs, y = y[[s]][[as.character(horizon[h])]][n], average = (!quant)) |> t()
+            count <- count + 1
+          }
         }
       }
     }
@@ -1258,19 +1304,24 @@ ensemble_pinball <- function (y, y_current, values, current, ens_models = NULL, 
         }
 
         est_pars <- grid_optim(probs = probs, values = values, y = y, q = q, quant = quant, M = M, wis = tmp_wis, by = by, theta_lim = c(lower, upper), horiz = horiz, short_grid_search = short_grid_search, method = method)
-        if (M == 1) {
-          phi[q] <- est_pars[1]
-        } else {
-          theta[q] <- est_pars[1]
-          phi[q]   <- est_pars[2] 
-        }
+        
+        theta[q] <- est_pars[1]
+        phi[q]   <- est_pars[2] 
       }
     }
 
 
     # Compute the new weights and nowcasts
     w <- matrix(data = 0, nrow = length(probs), ncol = M)
-    nowcast <- matrix(data = 0, nrow = S, ncol = length(probs))
+    if (horiz) {
+      nowcast <- matrix(data = 0, nrow = S, ncol = length(probs))
+    } else {
+      nowcast <- list()
+      for (s in 1:S) {
+        nowcast[[as.character(names_S[s])]] <- matrix(data = 0, nrow = H, ncol = length(probs))
+        rownames(nowcast[[as.character(names_S[s])]]) <- horizon
+      }
+    }
   
     wis <- elementwise_avg_3d(wis) # Averaging over the strata
     
@@ -1279,26 +1330,32 @@ ensemble_pinball <- function (y, y_current, values, current, ens_models = NULL, 
       tmp_wis <- wis[, , q]
       if (is.null(dim(tmp_wis))) { tmp_wis <- t(as.matrix(tmp_wis)) }
       tmp_wis_list[[q]] <- apply(X = tmp_wis, MARGIN = 2, FUN = mean)
-      if (M == 1) {
-        w[q, ] <- phi[q]
-      } else {
-        w[q, ] <- par_weights_scale(theta = theta[q], phi = phi[q], wis = apply(X = tmp_wis, MARGIN = 2, FUN = mean))
-      }
+      w[q, ] <- par_weights_scale(theta = theta[q], phi = phi[q], wis = apply(X = tmp_wis, MARGIN = 2, FUN = mean))
     }
     
-    for (s in 1:S) {
-      for (q in 1:length(probs)) {
-        if (M == 1) {
-          nowcast[s, q] <- w[q, ] %*% current[[s]][  q]
-        } else {
+    if (horiz) {
+      for (s in 1:S) {
+        for (q in 1:length(probs)) {
           nowcast[s, q] <- w[q, ] %*% current[[s]][, q]
         }
       }
+    } else {
+      for (s in 1:S) {
+        tmp_nowcast <- nowcast[[as.character(names_S[s])]]
+        for (q in 1:length(probs)) {
+          for (h in 1:1:H) {
+            tmp_nowcast[as.character(horizon[h]), q] <- w[q, ] %*% current[[s]][[as.character(horizon[h])]][[1]][, q] 
+          }
+        }
+        nowcast[[as.character(names_S[s])]] <- tmp_nowcast
+      }
     }
-    
+  
     if (TRUE) { 
       if (is.matrix(w)) { rownames(w) <- probs; colnames(w) <- ens_models }
-      if (is.vector(nowcast)) { names(nowcast) <- probs } else if (is.matrix(nowcast)) { colnames(nowcast) <- probs }
+      if (is.vector(nowcast) & !is.list(nowcast)) { names(nowcast) <- probs } else if (is.matrix(nowcast)) { colnames(nowcast) <- probs } else if (is.list(nowcast)) { for (s in 1:S) { colnames(nowcast[[s]]) <- probs } }
+      if (is.matrix(nowcast) & (nrow(nowcast) == 16)) { rownames(nowcast) <- state }
+      if (is.matrix(nowcast) & (nrow(nowcast) ==  6)) { rownames(nowcast) <- age   }
       if (is.vector(theta)) { names(theta) <- probs }
     }
     
@@ -1611,6 +1668,7 @@ cost_function <- function (pars, probs, values, y, wis, q = 1, quant = FALSE, ho
       }
       
     } else { # Ensemble
+      
       theta <- pars[1]
       phi   <- pars[2]
       
@@ -1656,12 +1714,20 @@ cost_function <- function (pars, probs, values, y, wis, q = 1, quant = FALSE, ho
       # TBD
       stop("Cost function for post-processing for stratified analysis has not been implemented yet.")
     } else {
+      
       theta <- pars[1]
       phi   <- pars[2]
       
-      S <- length(values)
-      N <- length(values[[1]])
-      ens_wis <- matrix(0, S, N)
+      if (horiz) {
+        S <- length(values)
+        N <- length(values[[1]])
+        ens_wis <- matrix(0, S, N)
+      } else { # Weights common across horizon
+        S <- length(values) 
+        H <- length(values[[1]])
+        N <- length(values[[1]][[1]])
+        ens_wis <- matrix(0, S, (N * H))
+      }
       
       w <- list()
       for (s in 1:S) {
@@ -1669,13 +1735,35 @@ cost_function <- function (pars, probs, values, y, wis, q = 1, quant = FALSE, ho
       }
       w <- elementwise_avg(w)
       
-      for (s in 1:S) {
-        for (n in 1:ncol(ens_wis)) {
-          ens_wis[s, n] <- compute_wis(probs = probs, quant = w %*% values[[s]][[n]], y = y[[s]][n], average = (!quant))[q]  
-        }
-      }
-    }
-  }
+      if (horiz) {
+        for (s in 1:S) {
+          for (n in 1:ncol(ens_wis)) {
+            ens_wis[s, n] <- compute_wis(probs = probs, quant = w %*% values[[s]][[n]], y = y[[s]][n], average = (!quant))[q]  
+          }
+        }  
+      } else { # Weights common across horizon
+        
+        for (s in 1:S) {
+          
+          count_H <- 1
+          count_N <- 1
+          
+          for (n in 1:ncol(ens_wis)) {
+            
+            # ens_wis[s, n] <- compute_wis(probs = probs, quant = w %*% values[[s]][[count_H]][[count_N]], y = y[[s]][[count_H]][count_N], average = (!quant))[q]  
+            ens_wis[s, n] <- compute_wis(probs = probs[q], quant = (w %*% values[[s]][[count_H]][[count_N]])[q], y = y[[s]][[count_H]][count_N], average = (!quant)) # It might be slightly faster (the difference only makes sense for the stratified analysis) 
+            
+            count_N <- count_N + 1
+            if ((n %% N) == 0) {
+              count_H <- count_H + 1  
+              count_N <- 1
+            }
+            
+          } # Number of components (N * H)
+        } # Strata  
+      } # Weights common across horizon
+    } # Ensemble
+  } # Stratified analysis
   
   mean(ens_wis, na.rm = TRUE)
 }
@@ -1929,21 +2017,51 @@ add_baseline_ensemble <- function (ensemble, baseline = NULL, reparameterize = F
         }
       } else {
         tmp_ensemble <- ensemble[[as.character(d)]]$nowcast
-        J <- nrow(tmp_ensemble) 
+        if (is.list(tmp_ensemble)) { S <- length(tmp_ensemble); J <- nrow(tmp_ensemble[[1]]) } else { J <- nrow(tmp_ensemble) }
       }
       
       if (horiz) {
         for (h in horizon) {
-          tmp_values <- baseline %>% filter(forecast_date == as.Date(d), target == paste(h, "day ahead inc hosp")) %>% select(value) %>% c() %>% unlist() %>% unname()
+          if (is.matrix(tmp_ensemble[[1]])) { # Stratified
+            names_S <- rownames(tmp_ensemble[[1]])
+            tmp_values <- matrix(data = 0, nrow = nrow(tmp_ensemble[[1]]), ncol = ncol(tmp_ensemble[[1]]))
+            for (s in 1:nrow(tmp_values)) {
+              if (nrow(tmp_values) == 16) {
+                tmp_values[s, ] <- baseline %>% filter(location  == names_S[s], forecast_date == as.Date(d), target == paste(h, "day ahead inc hosp")) %>% select(value) %>% c() %>% unlist() %>% unname()
+              } else if (nrow(tmp_values == 6)) {
+                tmp_values[s, ] <- baseline %>% filter(age_group == names_S[s], forecast_date == as.Date(d), target == paste(h, "day ahead inc hosp")) %>% select(value) %>% c() %>% unlist() %>% unname()
+              } else { stop("Error.") }
+            }
+          } else {
+            tmp_values <- baseline %>% filter(forecast_date == as.Date(d), target == paste(h, "day ahead inc hosp")) %>% select(value) %>% c() %>% unlist() %>% unname()
+          }
+          
           tmp_ensemble[[as.character(h)]] <- tmp_ensemble[[as.character(h)]] + tmp_values
         }
         
       } else {
-        for (j in 1:J) {
-          h <- as.numeric(rownames(tmp_ensemble)[j])
+        
+        if (is.list(tmp_ensemble)) { # if `ensemble` is a list
+          for (s in 1:S) {
+            for (j in 1:J) {
+              h <- as.numeric(rownames(tmp_ensemble[[s]])[j])
           
-          tmp_values <- baseline %>% filter(forecast_date == as.Date(d), target == paste(h, "day ahead inc hosp")) %>% select(value) %>% c() %>% unlist() %>% unname()
-          tmp_ensemble[j, ] <- tmp_ensemble[j, ] + tmp_values
+              if (length(state) > 1) {
+                tmp_values <- baseline %>% filter(location == state[s], forecast_date == as.Date(d), target == paste(h, "day ahead inc hosp")) %>% select(value) %>% c() %>% unlist() %>% unname()
+              } else if (length(age) > 1) {
+                tmp_values <- baseline %>% filter(age_group == age[s],  forecast_date == as.Date(d), target == paste(h, "day ahead inc hosp")) %>% select(value) %>% c() %>% unlist() %>% unname()
+              } else { stop(Error.) }
+              
+              tmp_ensemble[[s]][j, ] <- tmp_ensemble[[s]][j, ] + tmp_values
+            }
+          }
+        } else { # if `ensemble` is not a list
+          for (j in 1:J) {
+            h <- as.numeric(rownames(tmp_ensemble)[j])
+            
+            tmp_values <- baseline %>% filter(forecast_date == as.Date(d), target == paste(h, "day ahead inc hosp")) %>% select(value) %>% c() %>% unlist() %>% unname()
+            tmp_ensemble[j, ] <- tmp_ensemble[j, ] + tmp_values
+          } 
         }
       }
       
@@ -1952,8 +2070,9 @@ add_baseline_ensemble <- function (ensemble, baseline = NULL, reparameterize = F
           ensemble[[as.character(d)]][[as.character(h)]]$nowcast <- tmp_ensemble[[as.character(h)]]
         }
       } else {
-        ensemble[[as.character(d)]]$nowcast <- tmp_ensemble
+        ensemble[[as.character(d)]]$nowcast <- tmp_ensemble 
       }
+      
       if (length(ds) > 1) { setTxtProgressBar(b, i) }
     }
   }

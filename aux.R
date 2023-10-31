@@ -3,7 +3,12 @@
 ##################################################
 ##################################################
 
-plot_wis_bar <- function (df_wis, wis_summ, models, colors, ylim_manual = 200, ...) {
+plot_wis_bar <- function (df_wis, wis_summ, models, colors, ylim_manual = 200, skip_space = FALSE, reference_pts = NULL, ...) {
+  
+  if (!is.null(reference_pts) & skip_space) {
+    reference_pts <- data.frame(model = c(models[1:8], "space", models[9:10]), value = c(reference_pts[1:8], NA, reference_pts[9:10]))
+    reference_pts$model <- factor(x = reference_pts$model, levels = c(models[1:8], "space", models[9:10]), labels = c(models[1:8], "space", models[9:10]))
+  }
   
   # Compute the total WIS based on the 3-part decomposition
   df_wis_total <- data.frame(model = rep(NA, length(models)), wis = rep(NA, length(models)))
@@ -11,8 +16,22 @@ plot_wis_bar <- function (df_wis, wis_summ, models, colors, ylim_manual = 200, .
   df_wis_total$model <- factor(x = df_wis_total$model, levels = models)
   df_wis_total$wis <- Reduce(`+`, wis_summ) / length(wis_summ)
   
-  colors_ordered <- colors
-  names(colors_ordered) <- models
+  if (skip_space) {
+    df_wis$model <- as.character(df_wis$model)
+    df_wis <- rbind(df_wis, c(as.factor("space"), 0, "sprd"))
+    df_wis <- rbind(df_wis, c(as.factor("space"), 0, "over"))
+    df_wis <- rbind(df_wis, c(as.factor("space"), 0, "undr"))
+    df_wis$model <- factor(x = df_wis$model, levels = c(models[1:8], "space", models[9:10]), labels = c(models[1:8], "space", models[9:10]))
+    df_wis$wis <- as.numeric(df_wis$wis)
+  }
+
+  if (skip_space) {
+    colors_ordered <- c(colors[1:8], "cyan", colors[9:10])
+    names(colors_ordered) <- c(models[1:8], "space", models[9:10])
+  } else {
+    colors_ordered <- colors
+    names(colors_ordered) <- models
+  }
   
   pp <- ggplot() +
     geom_bar(data = df_wis, aes(x = model, y = wis), fill = "white", stat = "identity") +
@@ -25,6 +44,7 @@ plot_wis_bar <- function (df_wis, wis_summ, models, colors, ylim_manual = 200, .
       family = "LM Roman 10",
       label.padding = unit(0.2, "lines") 
     ) + 
+    { if (!is.null(reference_pts) & skip_space) geom_point(data = reference_pts, aes(x = model, y = value), pch = 5, size = 2) } +
     scale_fill_manual(values = colors_ordered, guide = "none") +
     scale_color_manual(values = colors_ordered, guide = "none") +
     scale_alpha_manual(
@@ -32,7 +52,8 @@ plot_wis_bar <- function (df_wis, wis_summ, models, colors, ylim_manual = 200, .
       labels = c("Overprediction", "Spread", "Underprediction"),
       guide = guide_legend(reverse = TRUE, title.position = "top", title.hjust = 0.5)
     ) +
-    scale_x_discrete(limits = rev(models), drop = FALSE) +
+    { if ( skip_space) scale_x_discrete(limits = rev(c(models[1:8], "space", models[9:10])), labels = rev(c(models[1:8], " ", models[9:10])), drop = FALSE) } +
+    { if (!skip_space) scale_x_discrete(limits = rev(models), drop = FALSE) } +
     labs(x = NULL, y = "WIS (Averaged over time points and horizons)", color = "Model", alpha = "Decomposition of WIS") +
     ylim(0, ylim_manual) +
     coord_flip() +
@@ -74,7 +95,7 @@ plot_wis_line_horizon <- function (df_wis_horizon, models, colors, quant = FALSE
 ##################################################
 ##################################################
 
-plot_postprocessed_models <- function (data, nowcasts, truth_data, model, r, training_size, uncertain_size, hh = 0, ens_method = "wis", horizon = -28:0, probs = c(0.025, 0.100, 0.250, 0.500, 0.750, 0.900, 0.975), ...) {
+plot_postprocessed_models <- function (data, nowcasts, truth_data, model, r, training_size, uncertain_size, hh = 0, ens_method = "wis", horizon = -28:0, probs = c(0.025, 0.100, 0.250, 0.500, 0.750, 0.900, 0.975), extra_skip = 0, ...) {
   
   name_method <- ifelse(ens_method == "wis", "DISW", "ISW")
   
@@ -193,6 +214,7 @@ plot_postprocessed_models <- function (data, nowcasts, truth_data, model, r, tra
   p3 <- ggplot(data = wis_days, aes(x = forecast_date, y = value, color = model)) +
     geom_line(linewidth = 1, alpha = rep(ifelse(unique(wis_days$forecast_date) < (r[1] + uncertain_size), 0.25, 1), 2)) +
     geom_vline(xintercept = as.numeric(r[1] + uncertain_size), linetype = "dashed") + 
+    geom_vline(xintercept = as.numeric(r[1] + uncertain_size + extra_skip), linetype = "dashed") + 
     scale_color_manual(NULL, values = cmb_colors) +
     expand_limits(y = 0) +
     labs(x = "Forecast date", y = "WIS (Averaged over horizons and M.W. up to 90 days)") +

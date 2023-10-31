@@ -45,7 +45,7 @@ source("header.R")
 source("utils.R")
 source("aux.R")
 
-ens_method <- "wis" # c("wis", "pinball", "ranked_unweighted")
+ens_method <- "pinball" # c("wis", "pinball", "ranked_unweighted")
 skip_recent_days <- FALSE # c(TRUE, FALSE)
 
 training_size <- 90
@@ -55,26 +55,29 @@ exploratory_wis <- FALSE # Plotting score for all individual and naive ensemble 
 ignore_naive_ensemble_data <- TRUE # Remove naive ensembles from the data objects, so the trained models do not take them as inputs
 
 quant <- TRUE # Weights depend (or not) on the quantiles
-horiz <- TRUE # Weights depend (or not) on the horizons
+horiz <- FALSE # Weights depend (or not) on the horizons
 
 post_processing <- FALSE
 post_select_mod <- "KIT"
 
 method <- "Mean" # c("Mean", "Median", "all_quant") # How to summarize the recent past
 
-strata <- "states" # c("states", "ages", "all")
+strata <- "state" # c("states", "ages", "all")
 
 if (strata == "states") {
   state_idx <- 1:16
   age_idx <- 7
   cluster_size <- 64
+  by <- 0.05
 } else if (strata == "ages") {
   state_idx <- 17
   age_idx <- 1:6
   cluster_size <- 32
+  by <- 0.025
 } else {
   state_idx <- 17 
   age_idx <- 7  
+  by <- 0.025
 }
 
 ########################
@@ -217,7 +220,8 @@ if (length(retrieved_data_files) == 1) {
     new_retrieved_data_file <- paste("DATA/TRAINING/new_retrieved_data_", method_files, "training_size_", training_size, "_state_", state, "_age_", age, ".RDS", sep = "")
     if (!file.exists(new_retrieved_data_file)) {
       
-      new_retrieved_data <- reparameterize_model(y = y, y_current = y_current, value = values, current = current, baseline = baseline, method = ifelse(method == "all_quant", "all_quant", NULL)) 
+      if (method == "all_quant") { tmp_method <- method } else { tmp_method <- NULL }
+      new_retrieved_data <- reparameterize_model(y = y, y_current = y_current, value = values, current = current, baseline = baseline, method = tmp_method) 
       
       saveRDS(object = new_retrieved_data, file = new_retrieved_data_file)
     } else {
@@ -329,17 +333,23 @@ if (length(retrieved_data_files) == 1) {
 if (exploratory_wis) {
   
   # Make all models comparable: `skip_first_days = 40 + 1`
-  wis_truth <- compute_wis_truth(data = data, truth_data = truth_data, models = models, horizon = horizon, start_date = r[1], end_date = r[2], skip_first_days = (uncertain_size + 1))
+  skip_first_days <- (uncertain_size + 1) + 30
+  wis_truth <- compute_wis_truth(data = data, truth_data = truth_data, models = models, horizon = horizon, start_date = r[1], end_date = r[2], skip_first_days = skip_first_days)
   
   df_wis <- wis_truth$df_wis
   wis_summ <- wis_truth$wis_summ
   
   # Bar plot
-  plot_wis_bar(df_wis = df_wis, wis_summ = wis_summ, models = models, colors = colors, ylim_manual = 210)
+  reference_pts <- df_wis %>% group_by(model) %>% mutate(total = sum(wis)) %>% ungroup() %>% select(total) %>% c() %>% unlist() %>% unname() %>% unique() %>% round(2)
+  reference_pts <- c(182.23, 175.92, 125.06, 135.40, 93.67, 137.85, 143.98, 209.49, 81.95, 80.76)
+  wis_bar <- plot_wis_bar(df_wis = df_wis, wis_summ = wis_summ, models = models, colors = colors, ylim_manual = 210, skip_space = TRUE)
   
   # Line plot over the horizons
   df_wis_horizon_truth <- compute_wis_horizon_truth(models = models, horizon = horizon, wis_summ = wis_summ)
-  plot_wis_line_horizon(df_wis_horizon = df_wis_horizon_truth, models = models, colors = colors)
+  wis_line_horizon <- plot_wis_line_horizon(df_wis_horizon = df_wis_horizon_truth, models = models, colors = colors)
+
+  p_total <- wis_bar + wis_line_horizon + plot_annotation(title = "WIS (original models)", theme = theme(plot.margin = margin(), text = element_text(size = 14, family = "LM Roman 10")))
+  ggsave(filename = paste("PLOTS/WIS_all_models.jpeg", sep = ""), plot = p_total, width = 3500, height = 1400, units = c("px"), dpi = 300, bg = "white") 
 
 }
 
@@ -432,7 +442,7 @@ if (ens_method == "wis") {
 new_data <- create_new_tibble()
 
 skip_first_days <- ifelse(skip_recent_days, uncertain_size + 1, 1)
-days <- seq(r[1] + skip_first_days, r[2], by = "1 day")
+days <- seq(r[1] + skip_first_days + 150, r[2], by = "1 day")
 
 ensemble <- list()
 count <- 1
@@ -455,6 +465,7 @@ for (k in 1:length(days)) {
       h <- horizon[i]
 
       if ((length(state) > 1) | length(age) > 1) { # Stratified analysis
+        
         n_strata <- max(length(state), length(age))
         if (n_strata == 16) { idx_strata <- state } else if (n_strata == 6) { idx_strata <- age }
         
@@ -475,9 +486,6 @@ for (k in 1:length(days)) {
         y_tmp         <- y[[as.character(dt)]][[as.character(h)]]
         y_current_tmp <- y_current[[as.character(dt)]][[as.character(h)]]
       }
-      
-      # Analyze `NaN` values
-      # TBD
 
       if (ens_method == "wis") {
         if (horiz) {
@@ -498,7 +506,7 @@ for (k in 1:length(days)) {
                                        horiz = horiz,
                                        probs = probs,
                                        short_grid_search = TRUE, 
-                                       by = 0.01,
+                                       by = by,
                                        method = method,
                                        n_ensemble_models = n_ensemble_models,
                                        unweighted_method = unweighted_method)
@@ -506,7 +514,6 @@ for (k in 1:length(days)) {
 
       ensemble[[as.character(dt)]][[as.character(h)]] <- tmp_result
 
-      # UPDATE `input_new_data()` to allow for the horizon independent estimation
       # Input the new data to the `new_data` tibble
       new_data <- input_new_data(new_data = new_data, ensemble = ensemble, ens_method = ens_method, h = h, state = state, age = age, day = dt, probs = probs)
 
@@ -514,14 +521,34 @@ for (k in 1:length(days)) {
     }
     if (horiz) { close(b) }
   } else {
-
-    current_ens <- current[[as.character(dt)]]
-    values_ens  <-  values[[as.character(dt)]]
+    
+    if ((length(state) > 1) | length(age) > 1) { # Stratified analysis
+      
+      n_strata <- max(length(state), length(age))
+      if (n_strata == 16) { idx_strata <- state } else if (n_strata == 6) { idx_strata <- age }
+      
+      current_ens   <- list()
+      values_ens    <- list()
+      y_tmp         <- list()
+      y_current_tmp <- list()
+      
+      for (j in 1:n_strata) {
+        current_ens[[as.character(idx_strata[j])]]   <- current[[as.character(idx_strata[j])]][[as.character(dt)]]
+        values_ens[[as.character(idx_strata[j])]]    <-  values[[as.character(idx_strata[j])]][[as.character(dt)]]
+        y_tmp[[as.character(idx_strata[j])]]         <- y[[as.character(idx_strata[j])]][[as.character(dt)]]
+        y_current_tmp[[as.character(idx_strata[j])]] <- y_current[[as.character(idx_strata[j])]][[as.character(dt)]]
+      }
+    } else { # National level
+      current_ens   <- current[[as.character(dt)]]
+      values_ens    <- values[[as.character(dt)]]
+      y_tmp         <- y[[as.character(dt)]]
+      y_current_tmp <- y_current[[as.character(dt)]]
+    }    
 
     if (ens_method %in% c("pinball", "ranked_unweighted")) {
       tmp_result <- compute_ensemble(ens_method = ens_method,
-                                     y = y[[as.character(dt)]],
-                                     y_current = y_current[[as.character(dt)]],
+                                     y = y_tmp,
+                                     y_current = y_current_tmp,
                                      values = values_ens,
                                      current = current_ens,
                                      ens_models = ens_models,
@@ -531,7 +558,7 @@ for (k in 1:length(days)) {
                                      horiz = horiz,
                                      probs = probs,
                                      short_grid_search = TRUE,
-                                     by = 0.01,
+                                     by = by,
                                      method = method,
                                      n_ensemble_models = n_ensemble_models,
                                      unweighted_method = unweighted_method)
@@ -547,15 +574,28 @@ for (k in 1:length(days)) {
   count <- count + 1
 }
 
-lim_days <- c(days[1], days[length(days)])
-baseline <- baseline %>% filter(type == "quantile", forecast_date >= lim_days[1], forecast_date <= lim_days[2])
-new_data <- add_baseline_new_data(new_data = new_data, baseline = baseline, reparameterize = reparameterize)
-ensemble <- add_baseline_ensemble(ensemble = ensemble, baseline = baseline, reparameterize = reparameterize, horiz = (horiz | (ens_method == "wis")))
-
 if (ens_method == "pinball") { unregister_dopar(); stopCluster(cl) }
 
 reparameterize_file <- ifelse(reparameterize, "new_", "")
 ranked_file <- ifelse(ens_method == "ranked_unweighted", paste("_", unweighted_method, "_", n_ensemble_models, sep = ""), "")
+
+######################################################
+# Backup for non-processed `new_data` and `ensemble` #
+######################################################
+if ((length(state) != 1) | (length(age) != 1)) {
+  if (length(state) != 1) {
+    saveRDS(object = list(ensemble = ensemble, new_data = new_data), file = paste("RESULTS/FITTED_OBJECTS/BACKUP_", reparameterize_file, "ALL_STATES_method_", ens_method, "_size_", training_size, "_skip_", as.character(skip_recent_days), "_quant_", as.character(quant), "_horiz_", as.character(horiz), ".RDS", sep = ""))
+  } else if (length(age) != 1) {
+    saveRDS(object = list(ensemble = ensemble, new_data = new_data), file = paste("RESULTS/FITTED_OBJECTS/BACKUP_", reparameterize_file, "ALL_AGES_method_",   ens_method, "_size_", training_size, "_skip_", as.character(skip_recent_days), "_quant_", as.character(quant), "_horiz_", as.character(horiz), ".RDS", sep = ""))
+  }
+}
+######################################################
+######################################################
+
+lim_days <- c(days[1], days[length(days)])
+baseline <- baseline %>% filter(type == "quantile", forecast_date >= lim_days[1], forecast_date <= lim_days[2])
+new_data <- add_baseline_new_data(new_data = new_data, baseline = baseline, reparameterize = reparameterize)
+ensemble <- add_baseline_ensemble(ensemble = ensemble, baseline = baseline, reparameterize = reparameterize, horiz = (horiz | (ens_method == "wis")))
 
 if ((length(state) == 1) & (length(age) == 1)) {
   fitted_model_file <- ifelse(post_processing,

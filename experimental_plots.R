@@ -39,8 +39,6 @@ ggplot(w_hat, aes(fill = as.factor(model), x = forecast_date)) +
         legend.background = element_rect(fill = "transparent"),
         text = element_text(size = 16, family = "LM Roman 10"))
 
-
-
 tt <- c()
 n_pts <- length(ISW_2$ensemble)
 for(i in 1:n_pts) {
