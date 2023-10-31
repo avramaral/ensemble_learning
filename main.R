@@ -36,8 +36,11 @@
 ###### STRATIFIED ANALYSIS #######################
 ##################################################
 
-# args <- commandArgs(trailingOnly = TRUE)
-# strata <- as.character(args[1])
+args <- commandArgs(trailingOnly = TRUE)
+ens_method   <- as.character(args[1])
+horiz        <- as.logical(args[2])
+strata       <- as.character(args[3])
+cluster_size <- as.numeric(args[4])
 
 ##################################################
 
@@ -45,7 +48,7 @@ source("header.R")
 source("utils.R")
 source("aux.R")
 
-ens_method <- "pinball" # c("wis", "pinball", "ranked_unweighted")
+# ens_method <- "pinball" # c("wis", "pinball", "ranked_unweighted")
 skip_recent_days <- FALSE # c(TRUE, FALSE)
 
 training_size <- 90
@@ -55,14 +58,14 @@ exploratory_wis <- FALSE # Plotting score for all individual and naive ensemble 
 ignore_naive_ensemble_data <- TRUE # Remove naive ensembles from the data objects, so the trained models do not take them as inputs
 
 quant <- TRUE # Weights depend (or not) on the quantiles
-horiz <- FALSE # Weights depend (or not) on the horizons
+# horiz <- FALSE # Weights depend (or not) on the horizons
 
 post_processing <- FALSE
 post_select_mod <- "KIT"
 
 method <- "Mean" # c("Mean", "Median", "all_quant") # How to summarize the recent past
 
-strata <- "state" # c("states", "ages", "all")
+# strata <- "states" # c("states", "ages", "all")
 
 if (strata == "states") {
   state_idx <- 1:16
@@ -87,7 +90,7 @@ unweighted_method <- "Mean" # c("Mean", "Median")
 ########################
 
 reparameterize <- TRUE # Model the difference if `TRUE`
-cluster_size <- 4
+# cluster_size <- 4
 
 ##################################################
 # LOAD AND PRE-PROCESS DATA

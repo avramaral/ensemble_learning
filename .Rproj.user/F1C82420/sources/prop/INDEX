@@ -24,6 +24,7 @@
 ~%2FDesktop%2Fensemble_learning%2FSH_SCRIPTS%2Franked_unweighted_mean.sh="3112D601"
 ~%2FDesktop%2Fensemble_learning%2FSH_SCRIPTS%2Franked_unweighted_median.sh="40919D55"
 ~%2FDesktop%2Fensemble_learning%2FSH_SCRIPTS%2Franked_vary_unweighted.sh="A6BA5619"
+~%2FDesktop%2Fensemble_learning%2FSH_SCRIPTS%2Fstratified_ensemble.sh="4E2519B6"
 ~%2FDesktop%2Fensemble_learning%2Faux.R="0023BA3F"
 ~%2FDesktop%2Fensemble_learning%2Fcombination_untrained_ensemble.R="A8DAEDCB"
 ~%2FDesktop%2Fensemble_learning%2Fcompute_wis_ensemble.R="904F4DD6"
