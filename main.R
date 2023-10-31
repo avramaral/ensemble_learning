@@ -58,14 +58,14 @@ exploratory_wis <- FALSE # Plotting score for all individual and naive ensemble 
 ignore_naive_ensemble_data <- TRUE # Remove naive ensembles from the data objects, so the trained models do not take them as inputs
 
 quant <- TRUE # Weights depend (or not) on the quantiles
-# horiz <- FALSE # Weights depend (or not) on the horizons
+# horiz <- TRUE # Weights depend (or not) on the horizons
 
 post_processing <- FALSE
 post_select_mod <- "KIT"
 
 method <- "Mean" # c("Mean", "Median", "all_quant") # How to summarize the recent past
 
-# strata <- "states" # c("states", "ages", "all")
+# strata <- "ages" # c("states", "ages", "all")
 
 if (strata == "states") {
   state_idx <- 1:16
@@ -445,7 +445,7 @@ if (ens_method == "wis") {
 new_data <- create_new_tibble()
 
 skip_first_days <- ifelse(skip_recent_days, uncertain_size + 1, 1)
-days <- seq(r[1] + skip_first_days + 150, r[2], by = "1 day")
+days <- seq(r[1] + skip_first_days, r[2], by = "1 day")
 
 ensemble <- list()
 count <- 1

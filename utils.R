@@ -1354,8 +1354,7 @@ ensemble_pinball <- function (y, y_current, values, current, ens_models = NULL, 
     if (TRUE) { 
       if (is.matrix(w)) { rownames(w) <- probs; colnames(w) <- ens_models }
       if (is.vector(nowcast) & !is.list(nowcast)) { names(nowcast) <- probs } else if (is.matrix(nowcast)) { colnames(nowcast) <- probs } else if (is.list(nowcast)) { for (s in 1:S) { colnames(nowcast[[s]]) <- probs } }
-      if (is.matrix(nowcast) & (nrow(nowcast) == 16)) { rownames(nowcast) <- state }
-      if (is.matrix(nowcast) & (nrow(nowcast) ==  6)) { rownames(nowcast) <- age   }
+      if (is.matrix(nowcast)) { if (nrow(nowcast) == 16) { rownames(nowcast) <- state } else if (nrow(nowcast) ==  6) {rownames(nowcast) <- age } }
       if (is.vector(theta)) { names(theta) <- probs }
     }
     
