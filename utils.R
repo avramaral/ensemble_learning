@@ -956,6 +956,11 @@ ensemble_wis <- function (current, weights, k = NULL,...) {
         weights[k, , q] <- weights[k, , q] / sum(weights[k, , q])
       }
       
+      if (TRUE) {
+        if (n_strata == 16) { names_S <- state } else if (n_strata == 6) { names_S <- age }
+        if (is.matrix(res)) { rownames(res) <- names_S; colnames(res) <- probs }
+      }
+      
     }
     
     weights <- weights[k, , ]
@@ -2100,6 +2105,45 @@ fix_baseline <- function (baseline, ...) {
   
   baseline
   
+}
+
+##################################################
+##################################################
+##################################################
+
+format_ensemble_wis <- function (ensemble, state, age, probs = c(0.025, 0.100, 0.250, 0.500, 0.750, 0.900, 0.975), ...) {
+  horizon <- as.numeric(names(ensemble))
+  new_ensemble <- ensemble[[1]]
+  
+  if (length(state) > 1) {
+    names_S <- state
+  } else {
+    names_S <- age
+  }
+  
+  count <- 1
+  for (h in horizon) {
+    if (count == 1) {
+      new_ensemble <- list(nowcast = 0, weights = 0)
+      
+      new_ensemble$nowcast <- list()
+      
+      for (s in 1:length(names_S)) {
+        tmp_matrix <- matrix(0, nrow = length(horizon), ncol = length(probs))
+        rownames(tmp_matrix) <- horizon
+        colnames(tmp_matrix) <- probs
+        new_ensemble$nowcast[[as.character(names_S[s])]] <- tmp_matrix
+      }
+      
+      new_ensemble$weights <- ensemble[[as.character(h)]]$weights
+    }
+    
+    for (s in 1:length(names_S)) { new_ensemble$nowcast[[as.character(names_S[s])]][as.character(h), ] <- ensemble[[as.character(h)]]$nowcast[s, ] }
+    
+    count <- count + 1
+  }
+  
+  new_ensemble
 }
 
 ##################################################

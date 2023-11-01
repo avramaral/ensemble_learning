@@ -7,4 +7,3 @@ Rscript main.R TRUE  FALSE Mean      32 &
 Rscript main.R FALSE FALSE Mean      32 &
 Rscript main.R FALSE FALSE all_quant 8  &
 Rscript main.R FALSE TRUE  Mean      40 
-

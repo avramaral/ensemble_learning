@@ -48,7 +48,7 @@ source("header.R")
 source("utils.R")
 source("aux.R")
 
-# ens_method <- "pinball" # c("wis", "pinball", "ranked_unweighted")
+ens_method <- "wis" # c("wis", "pinball", "ranked_unweighted")
 skip_recent_days <- FALSE # c(TRUE, FALSE)
 
 training_size <- 90
@@ -58,14 +58,14 @@ exploratory_wis <- FALSE # Plotting score for all individual and naive ensemble 
 ignore_naive_ensemble_data <- TRUE # Remove naive ensembles from the data objects, so the trained models do not take them as inputs
 
 quant <- TRUE # Weights depend (or not) on the quantiles
-# horiz <- TRUE # Weights depend (or not) on the horizons
+horiz <- FALSE # Weights depend (or not) on the horizons
 
 post_processing <- FALSE
 post_select_mod <- "KIT"
 
 method <- "Mean" # c("Mean", "Median", "all_quant") # How to summarize the recent past
 
-# strata <- "ages" # c("states", "ages", "all")
+strata <- "ages" # c("states", "ages", "all")
 
 if (strata == "states") {
   state_idx <- 1:16
@@ -90,7 +90,7 @@ unweighted_method <- "Mean" # c("Mean", "Median")
 ########################
 
 reparameterize <- TRUE # Model the difference if `TRUE`
-# cluster_size <- 4
+cluster_size <- 8
 
 ##################################################
 # LOAD AND PRE-PROCESS DATA
@@ -389,7 +389,7 @@ if (ens_method == "wis") {
       plot_wis_line_horizon(df_wis_horizon = df_wis_horizon_training, models = ens_models, colors = colors, quant = quant, legend = TRUE)
     }
     
-  } else { # Stratified analysis (there is no implementation for the score based on the "Cramér distance")
+  } else { # Stratified analysis (there is no implementation to use all quantiles for the recent past)
     
     wis <- list()
     wis_avg <- list()
@@ -422,15 +422,21 @@ if (ens_method == "wis") {
       for (i in 1:length(wis_files)) { cmb_wis[[as.character(horizon[h])]] <- (cmb_wis[[as.character(horizon[h])]] / length(wis_files)) }
       
     } else { # If `wis[[i]]` is not a list; i.e., if the weights are common across horizons
-      # TBD
-      stop("To be implemented.")
+      
+      S <- length(wis)
+      for (s in 1:S) {
+        if (s == 1) {
+          cmb_wis <- wis[[1]]
+        } else {
+          cmb_wis <- cmb_wis + wis[[i]]
+        }
+      }
     }
     
     wis <- cmb_wis
     
     if (!horiz) {
-      # TBD
-      stop("To be implemented.")
+      weights <- compute_weights(wis = wis)
     } else {
       weights <- lapply(X = wis, FUN = compute_weights)
     }
@@ -456,7 +462,7 @@ if (ens_method == "pinball") {
   clusterExport(cl, c("cost_function", "par_weights_scale", "compute_wis", "mpfr", "elementwise_avg", "elementwise_avg_3d", "quantile_distance"), envir = environment()) # Include exported functions
 }
 
-for (k in 1:length(days)) {
+for (k in 1:2) {
   dt <- days[k]
   print(paste(dt, " (", sprintf("%03d", count), "/", sprintf("%03d", length(days)), ")", sep = ""))
 
@@ -522,6 +528,9 @@ for (k in 1:length(days)) {
 
       if (horiz) { setTxtProgressBar(b, i) }
     }
+    
+    if (!horiz) { ensemble[[as.character(dt)]] <- format_ensemble_wis(ensemble = ensemble[[as.character(dt)]], state = state, age = age) }
+    
     if (horiz) { close(b) }
   } else {
     
@@ -537,7 +546,7 @@ for (k in 1:length(days)) {
       
       for (j in 1:n_strata) {
         current_ens[[as.character(idx_strata[j])]]   <- current[[as.character(idx_strata[j])]][[as.character(dt)]]
-        values_ens[[as.character(idx_strata[j])]]    <-  values[[as.character(idx_strata[j])]][[as.character(dt)]]
+        values_ens[[as.character(idx_strata[j])]]    <- values[[as.character(idx_strata[j])]][[as.character(dt)]]
         y_tmp[[as.character(idx_strata[j])]]         <- y[[as.character(idx_strata[j])]][[as.character(dt)]]
         y_current_tmp[[as.character(idx_strata[j])]] <- y_current[[as.character(idx_strata[j])]][[as.character(dt)]]
       }
@@ -598,7 +607,11 @@ if ((length(state) != 1) | (length(age) != 1)) {
 lim_days <- c(days[1], days[length(days)])
 baseline <- baseline %>% filter(type == "quantile", forecast_date >= lim_days[1], forecast_date <= lim_days[2])
 new_data <- add_baseline_new_data(new_data = new_data, baseline = baseline, reparameterize = reparameterize)
-ensemble <- add_baseline_ensemble(ensemble = ensemble, baseline = baseline, reparameterize = reparameterize, horiz = (horiz | (ens_method == "wis")))
+if ((length(state) > 1) | length(age) > 1) { # Stratified (only needed due to `wis`)
+  ensemble <- add_baseline_ensemble(ensemble = ensemble, baseline = baseline, reparameterize = reparameterize, horiz = horiz)
+} else {
+  ensemble <- add_baseline_ensemble(ensemble = ensemble, baseline = baseline, reparameterize = reparameterize, horiz = (horiz | (ens_method == "wis")))
+}
 
 if ((length(state) == 1) & (length(age) == 1)) {
   fitted_model_file <- ifelse(post_processing,
