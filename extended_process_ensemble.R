@@ -130,7 +130,7 @@ probs <- c(0.025, 0.100, 0.250, 0.500, 0.750, 0.900, 0.975)
 ##################################################
 
 # Extra gap
-skip_first_days <- 30
+skip_first_days <- 0
 compute_wis_file <- paste("RESULTS/FITTED_OBJECTS/WIS/wis_size_", training_size, "_state_", state, "_age_", age, "_extra_gap_", skip_first_days, ".RDS", sep = "")
 
 if (file.exists(compute_wis_file)) {
@@ -183,7 +183,7 @@ if (file.exists(w_hat_file)) {
   w_hat_DISW_2 <- weights_tibble(ensemble = DISW_2_ens, r = rr, models = models_orig, horizon = horizon, skip_first_days = skip_first_days_2, probs = probs, ens_model = "DISW", horiz = horiz)
   w_hat_ISW_1  <- weights_tibble(ensemble = ISW_1_ens , r = rr, models = models_orig, horizon = horizon, skip_first_days = skip_first_days_1, probs = probs, ens_model = "ISW" , horiz = horiz)
   w_hat_ISW_2  <- weights_tibble(ensemble = ISW_2_ens , r = rr, models = models_orig, horizon = horizon, skip_first_days = skip_first_days_2, probs = probs, ens_model = "ISW" , horiz = horiz)
-  #w_hat_DISW_1 <- w_hat_DISW_2 <- w_hat_ISW_1 <- w_hat_ISW_2
+  # w_hat_DISW_1 <- w_hat_DISW_2 <- w_hat_ISW_1 <- w_hat_ISW_2
   
   w_hat <- list(w_hat_DISW_1 = w_hat_DISW_1, w_hat_DISW_2 = w_hat_DISW_2, w_hat_ISW_1 = w_hat_ISW_1, w_hat_ISW_2 = w_hat_ISW_2)
   saveRDS(object = w_hat, file = w_hat_file)

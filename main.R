@@ -36,11 +36,11 @@
 ###### STRATIFIED ANALYSIS #######################
 ##################################################
 
-args <- commandArgs(trailingOnly = TRUE)
-ens_method   <- as.character(args[1])
-horiz        <- as.logical(args[2])
-strata       <- as.character(args[3])
-cluster_size <- as.numeric(args[4])
+# args <- commandArgs(trailingOnly = TRUE)
+# ens_method   <- as.character(args[1])
+# horiz        <- as.logical(args[2])
+# strata       <- as.character(args[3])
+# cluster_size <- as.numeric(args[4])
 
 ##################################################
 
@@ -58,14 +58,14 @@ exploratory_wis <- FALSE # Plotting score for all individual and naive ensemble 
 ignore_naive_ensemble_data <- TRUE # Remove naive ensembles from the data objects, so the trained models do not take them as inputs
 
 quant <- TRUE # Weights depend (or not) on the quantiles
-horiz <- FALSE # Weights depend (or not) on the horizons
+horiz <- TRUE # Weights depend (or not) on the horizons
 
 post_processing <- FALSE
 post_select_mod <- "KIT"
 
 method <- "Mean" # c("Mean", "Median", "all_quant") # How to summarize the recent past
 
-strata <- "ages" # c("states", "ages", "all")
+strata <- "states" # c("states", "ages", "all")
 
 if (strata == "states") {
   state_idx <- 1:16
@@ -462,7 +462,7 @@ if (ens_method == "pinball") {
   clusterExport(cl, c("cost_function", "par_weights_scale", "compute_wis", "mpfr", "elementwise_avg", "elementwise_avg_3d", "quantile_distance"), envir = environment()) # Include exported functions
 }
 
-for (k in 1:2) {
+for (k in 1:length(days)) {
   dt <- days[k]
   print(paste(dt, " (", sprintf("%03d", count), "/", sprintf("%03d", length(days)), ")", sep = ""))
 

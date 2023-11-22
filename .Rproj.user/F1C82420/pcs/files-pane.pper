@@ -1,17 +1,17 @@
 {
     "sortOrder": [
         {
-            "columnIndex": 4,
-            "ascending": false
-        },
-        {
             "columnIndex": 2,
             "ascending": true
+        },
+        {
+            "columnIndex": 4,
+            "ascending": false
         },
         {
             "columnIndex": 3,
             "ascending": true
         }
     ],
-    "path": "~/Desktop/ensemble_learning/DATA/TRAINING/WIS"
+    "path": "~/Desktop/ensemble_learning"
 }
