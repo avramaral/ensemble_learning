@@ -66,6 +66,145 @@ plot_wis_bar <- function (df_wis, wis_summ, models, colors, ylim_manual = 200, s
 }
 
 ##################################################
+
+plot_wis_bar_stratified <- function (df_wis, wis_summ, models, colors, ylim_manual = 200, skip_space = FALSE, reference_pts = NULL, ...) {
+  
+  if (idx_missing_model == 2) { models <- c(models[1], "ILM",     models[2:9]) } else if (idx_missing_model == 6) { models <- c(models[1:5], "RKI",     models[6:9])  }
+  if (idx_missing_model == 2) { colors <- c(colors[1], "#E69F00", colors[2:9]) } else if (idx_missing_model == 6) { colors <- c(colors[1:5], "#3C4AAD", colors[6:9])  }
+  
+  if (!is.null(reference_pts) & skip_space) {
+    reference_pts <- data.frame(model = c(models[1:8], "space", models[9:10]), value = c(reference_pts[1:(idx_missing_model - 1)], NA, reference_pts[(idx_missing_model):7], NA, reference_pts[8:9]))
+    reference_pts$model <- factor(x = reference_pts$model, levels = c(models[1:8], "space", models[9:10]), labels = c(models[1:8], "space", models[9:10]))
+  }
+  
+  # Compute the total WIS based on the 3-part decomposition
+  df_wis_total <- data.frame(model = rep(NA, length(models)), wis = rep(NA, length(models)))
+  df_wis_total$model <- models
+  df_wis_total$model <- factor(x = df_wis_total$model, levels = models)
+  tmp_wis <- Reduce(`+`, wis_summ) / length(wis_summ)
+  tmp_wis <- c(tmp_wis[1:(idx_missing_model - 1)], NA, tmp_wis[idx_missing_model:9])
+  df_wis_total$wis <- tmp_wis
+  
+  if (skip_space) {
+    df_wis$model <- as.character(df_wis$model)
+    for (i in 1:2) {
+      df_wis <- rbind(df_wis, c(as.factor("space"), 0, "sprd"))
+      df_wis <- rbind(df_wis, c(as.factor("space"), 0, "over"))
+      df_wis <- rbind(df_wis, c(as.factor("space"), 0, "undr"))
+    }
+    tmp_models <- models[-idx_missing_model]
+    df_wis$model <- factor(x = df_wis$model, levels = c(tmp_models[1:7], "space", tmp_models[8:9]), labels = c(tmp_models[1:7], "space", tmp_models[8:9]))
+    df_wis$wis <- as.numeric(df_wis$wis)
+  }
+  
+  if (skip_space) {
+    colors_ordered <- c(colors[1:8], "cyan", colors[9:10])
+    names(colors_ordered) <- c(models[1:8], "space", models[9:10])
+  } else {
+    colors_ordered <- colors
+    names(colors_ordered) <- models
+  }
+  names(colors_ordered)[idx_missing_model] <- "space"
+  colors_ordered[idx_missing_model] <- "cyan"
+  
+  pp <- ggplot() +
+    geom_bar(data = df_wis, aes(x = model, y = wis), fill = "white", stat = "identity") +
+    geom_bar(data = df_wis, aes(x = model, y = wis, fill = model, alpha = component, color = model), stat = "identity") +
+    geom_label(
+      data = df_wis_total, aes(x = model, y = 0.5 * as.numeric(wis), label = sprintf("%0.2f", round(as.numeric(wis), digits = 2))),
+      fill = "white", alpha = 1, hjust = 0.5,
+      label.r = unit(0.15, "lines"),
+      size = 10 / .pt,
+      family = "LM Roman 10",
+      label.padding = unit(0.2, "lines") 
+    ) + 
+    { if (!is.null(reference_pts) & skip_space) geom_point(data = reference_pts, aes(x = model, y = value), pch = 5, size = 2) } +
+    scale_fill_manual(values = colors_ordered, guide = "none") +
+    scale_color_manual(values = colors_ordered, guide = "none") +
+    scale_alpha_manual(
+      values = c(0.5, 0.2, 1.0), 
+      labels = c("Overprediction", "Spread", "Underprediction"),
+      guide = guide_legend(reverse = TRUE, title.position = "top", title.hjust = 0.5)
+    ) +
+    { if ( skip_space) scale_x_discrete(limits = rev(c(models[1:8], "space", models[9:10])), labels = rev(c(models[1:8], " ", models[9:10])), drop = FALSE) } +
+    { if (!skip_space) scale_x_discrete(limits = rev(models), drop = FALSE) } +
+    labs(x = NULL, y = "WIS (Averaged over time points and horizons)", color = "Model", alpha = "Decomposition of WIS") +
+    ylim(0, ylim_manual) +
+    coord_flip() +
+    theme_bw() +
+    theme(legend.position = "bottom", text = element_text(size = 16, family = "LM Roman 10"), 
+          axis.ticks.y = element_blank()
+    )
+  
+  pp
+}
+
+##################################################
+
+plot_wis_bar_ensemble <- function (df_wis, wis_summ, models, colors, ylim_manual = 200, skip_space = FALSE, ...) {
+  
+  models <- c("DISW 1", "DISW 2", "DISW 3", "DISW 4", "AISW 1", "AISW 2", "AISW 3", "AISW 4", "Mean", "Median")
+  DISW_colors <- colorRampPalette(c("#8B0000", "#E6ADD8"))(4)
+  AISW_colors <- colorRampPalette(c("#00008B", "#ADD8E6"))(4)
+  colors <- c(DISW_colors, AISW_colors, "#009E73", "#60D1B3")
+  
+  # Compute the total WIS based on the 3-part decomposition
+  df_wis_total <- data.frame(model = rep(NA, length(models)), wis = rep(NA, length(models)))
+  df_wis_total$model <- models
+  df_wis_total$model <- factor(x = df_wis_total$model, levels = models)
+  tmp_wis <- Reduce(`+`, wis_summ) / length(wis_summ)
+  tmp_wis <- c(NA, tmp_wis[1], NA, tmp_wis[2], NA, tmp_wis[3], NA, tmp_wis[4], tmp_wis[5:6])
+  df_wis_total$wis <- tmp_wis
+  
+  if (skip_space) {
+    df_wis$model <- as.character(df_wis$model)
+    df_wis <- rbind(df_wis, c(as.factor("space"), 0, "sprd"))
+    df_wis <- rbind(df_wis, c(as.factor("space"), 0, "over"))
+    df_wis <- rbind(df_wis, c(as.factor("space"), 0, "undr"))
+    df_wis$model <- factor(x = df_wis$model, levels = c(models[1:8], "space", models[9:10]), labels = c(models[1:8], "space", models[9:10]))
+    df_wis$wis <- as.numeric(df_wis$wis)
+  }
+  
+  if (skip_space) {
+    colors_ordered <- c(colors[1:8], "cyan", colors[9:10])
+    names(colors_ordered) <- c(models[1:8], "space", models[9:10])
+  } else {
+    colors_ordered <- colors
+    names(colors_ordered) <- models
+  }
+  
+  pp <- ggplot() +
+    geom_bar(data = df_wis, aes(x = model, y = wis), fill = "white", stat = "identity") +
+    geom_bar(data = df_wis, aes(x = model, y = wis, fill = model, alpha = component, color = model), stat = "identity") +
+    geom_label(
+      data = df_wis_total, aes(x = model, y = 0.5 * as.numeric(wis), label = sprintf("%0.2f", round(as.numeric(wis), digits = 2))),
+      fill = "white", alpha = 1, hjust = 0.5,
+      label.r = unit(0.15, "lines"),
+      size = 10 / .pt,
+      family = "LM Roman 10",
+      label.padding = unit(0.2, "lines") 
+    ) + 
+    scale_fill_manual(values = colors_ordered, guide = "none") +
+    scale_color_manual(values = colors_ordered, guide = "none") +
+    scale_alpha_manual(
+      values = c(0.5, 0.2, 1.0), 
+      labels = c("Overprediction", "Spread", "Underprediction"),
+      guide = guide_legend(reverse = TRUE, title.position = "top", title.hjust = 0.5)
+    ) +
+    { if ( skip_space) scale_x_discrete(limits = rev(c(models[1:8], "space", models[9:10])), labels = rev(c(models[1:8], " ", models[9:10])), drop = FALSE) } +
+    { if (!skip_space) scale_x_discrete(limits = rev(models), drop = FALSE) } +
+    labs(x = NULL, y = "WIS (Averaged over time points and horizons)", color = "Model", alpha = "Decomposition of WIS") +
+    ylim(0, ylim_manual) +
+    coord_flip() +
+    theme_bw() +
+    theme(legend.position = "bottom", text = element_text(size = 16, family = "LM Roman 10"), 
+          axis.ticks.y = element_blank()
+    )
+  
+  pp
+}
+
+##################################################
 ##################################################
 ##################################################
 
@@ -95,7 +234,7 @@ plot_wis_line_horizon <- function (df_wis_horizon, models, colors, quant = FALSE
 ##################################################
 ##################################################
 
-plot_postprocessed_models <- function (data, nowcasts, truth_data, model, r, training_size, uncertain_size, hh = 0, ens_method = "wis", horizon = -28:0, probs = c(0.025, 0.100, 0.250, 0.500, 0.750, 0.900, 0.975), extra_skip = 0, ...) {
+plot_postprocessed_models <- function (data, nowcasts, truth_data, model, r, training_size, uncertain_size, hh = 0, ens_method = "wis", horizon = -28:0, probs = c(0.025, 0.100, 0.250, 0.500, 0.750, 0.900, 0.975), extra_skip = 0, skip_recent_days = FALSE, ...) {
   
   name_method <- ifelse(ens_method == "wis", "DISW", "ISW")
   
@@ -210,13 +349,17 @@ plot_postprocessed_models <- function (data, nowcasts, truth_data, model, r, tra
   total_days <- ifelse(skip_recent_days, (training_size - uncertain_size), training_size)
   wis_days <- compute_wis_days(wis = cmb_wis, models = cmb_models, start_date = r[1], end_date = r[2], total_days = total_days)
   
+  if (skip_recent_days) { r_1 <- (r[1] - 40 + 1); r_e <- 0 } else { r_1 <- r[1] + 1; r_e <- 0 }
+  r_2 <- r[2]
+  
   wis_days[wis_days$model == name_method, ]$model <- "Post-processed"
   p3 <- ggplot(data = wis_days, aes(x = forecast_date, y = value, color = model)) +
-    geom_line(linewidth = 1, alpha = rep(ifelse(unique(wis_days$forecast_date) < (r[1] + uncertain_size), 0.25, 1), 2)) +
-    geom_vline(xintercept = as.numeric(r[1] + uncertain_size), linetype = "dashed") + 
-    geom_vline(xintercept = as.numeric(r[1] + uncertain_size + extra_skip), linetype = "dashed") + 
+    geom_line(linewidth = 1, alpha = rep(ifelse(unique(wis_days$forecast_date) < (r_1 + uncertain_size + 1), 0.25, 1), 2)) +
+    geom_vline(xintercept = as.numeric(r_1 + uncertain_size + r_e + 1), linetype = "dashed") + 
+    geom_vline(xintercept = as.numeric(r_1 + uncertain_size + r_e + 1 + extra_skip), linetype = "dashed") + 
     scale_color_manual(NULL, values = cmb_colors) +
     expand_limits(y = 0) +
+    xlim(c(r_1, r_2)) +
     labs(x = "Forecast date", y = "WIS (Averaged over horizons and M.W. up to 90 days)") +
     theme_bw() +
     theme(legend.position = "none", 
@@ -237,7 +380,7 @@ plot_postprocessed_models <- function (data, nowcasts, truth_data, model, r, tra
 ##################################################
 ##################################################
 
-plotting_summarized_weights <- function (w_hat, r, models, colors, uncertain_size = 40, ...) {
+plotting_summarized_weights <- function (w_hat, r, models, colors, uncertain_size = 40, extra_skip = 0, y_max = NULL, ...) {
   names(colors) <- models
   alphas <- c(1, 2)
   w_hat <- w_hat |> add_column(aa = factor(ifelse(w_hat$forecast_date <= (r[1] + uncertain_size), alphas[1], alphas[2])))
@@ -246,13 +389,15 @@ plotting_summarized_weights <- function (w_hat, r, models, colors, uncertain_siz
     ggplot(aes(fill = as.factor(model), x = forecast_date)) +
     geom_bar(aes(y = value, alpha = aa), position = "stack", stat = "identity") +
     geom_vline(xintercept = as.numeric(r[1] + (uncertain_size + 1)) - 0.5, linetype = "dashed") + 
+    geom_vline(xintercept = as.numeric(r[1] + (uncertain_size + 1)  + extra_skip) - 0.5, linetype = "dashed") + 
     scale_fill_manual("Models", values = colors) +
     scale_alpha_manual(values = rr, guide = "none") +
     scale_x_date(limit = c((r[1] + 1), max(w_hat$forecast_date))) + 
     labs(x = "Forecast date", y = "Weights (Averaged over horizons and quantiles)") + 
     theme_bw() +
     theme(legend.position = "right", text = element_text(size = 14, family = "LM Roman 10")) +
-    scale_y_continuous()
+    { if (!is.null(y_max)) scale_y_continuous(breaks = seq(0, y_max, length.out = 6), limits = c(0, y_max)) } +
+    { if ( is.null(y_max)) scale_y_continuous() } 
   
   pp
 }
@@ -261,7 +406,7 @@ plotting_summarized_weights <- function (w_hat, r, models, colors, uncertain_siz
 ##################################################
 ##################################################
 
-plotting_quantile_weights <- function (w_hat, r, models, colors, uncertain_size = 40, ...) {
+plotting_quantile_weights <- function (w_hat, r, models, colors, uncertain_size = 40, extra_skip = 0, y_max = NULL, ...) {
   names(colors) <- models
   
   alphas <- c(1, 2)
@@ -272,7 +417,8 @@ plotting_quantile_weights <- function (w_hat, r, models, colors, uncertain_size 
   pp <- ggplot(w_hat, aes(fill = as.factor(model), x = forecast_date)) +
     facet_wrap("quant", scales = "fixed", ncol = 1) +
     geom_bar(aes(y = value, alpha = aa), position = "stack", stat = "identity") + # c(fill, stack)
-    geom_vline(xintercept = as.numeric(r[1] + 41) - 0.5, linetype = "dashed") + 
+    geom_vline(xintercept = as.numeric(r[1] + (uncertain_size + 1)) - 0.5, linetype = "dashed") + 
+    geom_vline(xintercept = as.numeric(r[1] + (uncertain_size + 1)  + extra_skip) - 0.5, linetype = "dashed") + 
     scale_fill_manual("Models", values = colors) +
     scale_alpha_manual(values = af, guide = "none") +
     scale_x_date(limit = c((r[1] + 1), max(w_hat$forecast_date))) + 
@@ -293,7 +439,8 @@ plotting_quantile_weights <- function (w_hat, r, models, colors, uncertain_size 
           legend.box.spacing = unit(0, "pt"),
           legend.background = element_rect(fill = "transparent"),
           text = element_text(size = 16, family = "LM Roman 10")) +
-    scale_y_continuous()
+    { if (!is.null(y_max)) scale_y_continuous(breaks = seq(0, y_max, length.out = 6), limits = c(0, y_max)) } +
+    { if ( is.null(y_max)) scale_y_continuous() } 
   
   pp
 }
@@ -302,7 +449,7 @@ plotting_quantile_weights <- function (w_hat, r, models, colors, uncertain_size 
 ##################################################
 ##################################################
 
-plotting_horizon_weights <- function (w_hat, r, models, colors, uncertain_size = 40, hhs = c(-28, -23, -18, -13, -8, -3, 0), big_title = "", ...) {
+plotting_horizon_weights <- function (w_hat, r, models, colors, uncertain_size = 40, hhs = c(-28, -23, -18, -13, -8, -3, 0), big_title = "", extra_skip = 0, y_max = NULL, ...) {
   names(colors) <- models
   
   alphas <- c(1, 2)
@@ -315,7 +462,8 @@ plotting_horizon_weights <- function (w_hat, r, models, colors, uncertain_size =
   pp <- ggplot(w_hat, aes(fill = as.factor(model), x = forecast_date)) +
     facet_wrap("horizon", scales = "fixed", nrow = ceiling(length(hhs) / 2)) +
     geom_bar(aes(y = value, alpha = aa), position = "stack", stat = "identity") +
-    geom_vline(xintercept = as.numeric(r[1] + 41) - 0.5, linetype = "dashed") + 
+    geom_vline(xintercept = as.numeric(r[1] + (uncertain_size + 1)) - 0.5, linetype = "dashed") + 
+    geom_vline(xintercept = as.numeric(r[1] + (uncertain_size + 1)  + extra_skip) - 0.5, linetype = "dashed") + 
     scale_fill_manual("Models", values = colors) +
     scale_alpha_manual(values = af, guide = "none") +
     scale_x_date(limit = c((r[1] + 1), max(w_hat$forecast_date))) + 
@@ -336,7 +484,8 @@ plotting_horizon_weights <- function (w_hat, r, models, colors, uncertain_size =
           legend.box.spacing = unit(0, "pt"),
           legend.background = element_rect(fill = "transparent"),
           text = element_text(size = 16, family = "LM Roman 10")) +
-    scale_y_continuous()
+    { if (!is.null(y_max)) scale_y_continuous(breaks = seq(0, y_max, length.out = 6), limits = c(0, y_max)) } +
+    { if ( is.null(y_max)) scale_y_continuous() } 
   
   pp
 }

@@ -117,9 +117,9 @@ df_wis_horizon_truth <- compute_wis_horizon_truth(models = models, horizon = hor
 wis_line_horizon <- plot_wis_line_horizon(df_wis_horizon = df_wis_horizon_truth, models = models, colors = colors)
 
 if (skip_recent_days) { tmp_mtd <- "omit recent data" } else if (!skip_recent_days & method == "all_quant") { tmp_mtd <- "full set of quantiles" } else { tmp_mtd <- "plug-in point nowcast" }
-tmp_ttl <- paste("WIS (post-processed) ", ifelse(horiz, "varying weights horizon", "shared weights horizon"), " and ", tmp_mtd, sep = "")
+tmp_ttl <- "" # paste("WIS (post-processed) ", ifelse(horiz, "varying weights horizon", "shared weights horizon"), " and ", tmp_mtd, sep = "")
 p_total <- wis_bar + wis_line_horizon + plot_annotation(title = tmp_ttl, theme = theme(plot.margin = margin(), text = element_text(size = 14, family = "LM Roman 10")))
-ggsave(filename = paste("PLOTS/WIS_all_post_skip_", skip_recent_days, "_horiz_", horiz, "_method_", method, ".jpeg", sep = ""), plot = p_total, width = 3500, height = 1400, units = c("px"), dpi = 300, bg = "white") 
+ggsave(filename = paste("PLOTS/POSTPROCESS/WIS_all_post_skip_", skip_recent_days, "_horiz_", horiz, "_method_", method, ".jpeg", sep = ""), plot = p_total, width = 3500, height = 1400, units = c("px"), dpi = 300, bg = "white") 
 
 ##################################################
 # PLOT OTHER POST-PROCESSED MODELS
@@ -140,7 +140,7 @@ if (file.exists(postprocessed_plots_file)) {
     color <- colors[i]
     
     print(paste("Model: ", model, " (", sprintf("%02d", i), "/", sprintf("%02d", length(models)), ").", sep = ""))
-    postprocessed_plots[[i]] <- plot_postprocessed_models(data = data, nowcasts = cp_postprocessed_data, truth_data = truth_data, model = model, r = r, training_size = training_size, uncertain_size = uncertain_size, hh = hh, ens_method = ens_method, extra_skip = extra_skip)
+    postprocessed_plots[[i]] <- plot_postprocessed_models(data = data, nowcasts = cp_postprocessed_data, truth_data = truth_data, model = model, r = r, training_size = training_size, uncertain_size = uncertain_size, hh = hh, ens_method = ens_method, extra_skip = extra_skip, skip_recent_days = skip_recent_days)
   }
 
   saveRDS(object = postprocessed_plots, file = postprocessed_plots_file)
@@ -148,5 +148,7 @@ if (file.exists(postprocessed_plots_file)) {
 
 if (skip_recent_days) { tmp_mtd <- "omit recent data" } else if (!skip_recent_days & method == "all_quant") { tmp_mtd <- "full set of quantiles" } else { tmp_mtd <- "plug-in point nowcast" }
 tmp_ttl <- paste("Post-processed unweighted ensemble (", ifelse(horiz, "varying weights horizon", "shared weights horizon"), " and ", tmp_mtd, ")", sep = "")
-p_total <- postprocessed_plots[[9]]$p_total / postprocessed_plots[[10]]$p_total + plot_annotation(title = tmp_ttl, theme = theme(plot.margin = margin(), text = element_text(size = 14, family = "LM Roman 10")))
-ggsave(filename = paste("PLOTS/post_unweighted_skip_", skip_recent_days, "_horiz_", horiz, "_method_", method, ".jpeg", sep = ""), plot = p_total, width = 3500, height = 2800, units = c("px"), dpi = 300, bg = "white") 
+# p_total <- postprocessed_plots[[9]]$p_total / postprocessed_plots[[10]]$p_total + plot_annotation(title = tmp_ttl, theme = theme(plot.margin = margin(), text = element_text(size = 14, family = "LM Roman 10")))
+for (m in 1:length(models)) {
+  ggsave(filename = paste("PLOTS/POSTPROCESS/post_", models[m], "_skip_", skip_recent_days, "_horiz_", horiz, "_method_", method, ".jpeg", sep = ""), plot = postprocessed_plots[[m]]$p_total, width = 3500, height = 1400, units = c("px"), dpi = 300, bg = "white") 
+}

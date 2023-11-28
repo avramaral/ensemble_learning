@@ -65,7 +65,7 @@ post_select_mod <- "KIT"
 
 method <- "Mean" # c("Mean", "Median", "all_quant") # How to summarize the recent past
 
-strata <- "states" # c("states", "ages", "all")
+strata <- "ages" # c("states", "ages", "all")
 
 if (strata == "states") {
   state_idx <- 1:16
@@ -344,16 +344,46 @@ if (exploratory_wis) {
   
   # Bar plot
   reference_pts <- df_wis %>% group_by(model) %>% mutate(total = sum(wis)) %>% ungroup() %>% select(total) %>% c() %>% unlist() %>% unname() %>% unique() %>% round(2)
-  reference_pts <- c(182.23, 175.92, 125.06, 135.40, 93.67, 137.85, 143.98, 209.49, 81.95, 80.76)
-  wis_bar <- plot_wis_bar(df_wis = df_wis, wis_summ = wis_summ, models = models, colors = colors, ylim_manual = 210, skip_space = TRUE)
-  
+  if (strata == "all") {
+    # reference_pts <- c(182.23, 175.92, 125.06, 135.40, 93.67, 137.85, 143.98, 209.49, 81.95, 80.76)
+    wis_bar <- plot_wis_bar(df_wis = df_wis, wis_summ = wis_summ, models = models, colors = colors, ylim_manual = 220, skip_space = TRUE)
+  } else {
+    # Ages
+    # reference_pts <- c(28.56, 31.77, 22.99, 30.98, 20.60, 23.59, 39.53, 16.28, 16.69)
+    # States 
+    # reference_pts <- c(14.99, 12.84, 15.26, 13.89, 17.02, 13.83, 20.37, 10.97, 11.19)
+    if (strata == "states") { ylim_manual <- 25 } else if (strata == "ages") { ylim_manual <- 40 }
+    wis_bar <- plot_wis_bar_stratified(df_wis = df_wis, wis_summ = wis_summ, models = models, colors = colors, ylim_manual = ylim_manual, skip_space = TRUE)
+  }
+
   # Line plot over the horizons
   df_wis_horizon_truth <- compute_wis_horizon_truth(models = models, horizon = horizon, wis_summ = wis_summ)
   wis_line_horizon <- plot_wis_line_horizon(df_wis_horizon = df_wis_horizon_truth, models = models, colors = colors)
 
-  p_total <- wis_bar + wis_line_horizon + plot_annotation(title = "WIS (original models)", theme = theme(plot.margin = margin(), text = element_text(size = 14, family = "LM Roman 10")))
-  ggsave(filename = paste("PLOTS/WIS_all_models.jpeg", sep = ""), plot = p_total, width = 3500, height = 1400, units = c("px"), dpi = 300, bg = "white") 
+  tmp_ttl <- "" # "WIS (original models)"
+  p_total <- wis_bar + wis_line_horizon + plot_annotation(title = tmp_ttl, theme = theme(plot.margin = margin(), text = element_text(size = 14, family = "LM Roman 10")))
+  saveRDS(object = p_total, file = paste("PLOTS/WIS_", strata, "_models.RDS", sep = ""))
+  ggsave(filename = paste("PLOTS/WIS_", strata, "_models.jpeg", sep = ""), plot = p_total, width = 3500, height = 1400, units = c("px"), dpi = 300, bg = "white") 
 
+  if (TRUE) { # Plot all strata
+
+    p_all    <- readRDS("PLOTS/WIS_all_models.RDS")    &  plot_annotation(title = "National level") & theme(plot.title = element_text(hjust = 0.5, size = 18))
+    p_ages   <- readRDS("PLOTS/WIS_ages_models.RDS")   &  plot_annotation(title = "Age groups")     & theme(plot.title = element_text(hjust = 0.5, size = 18))
+    p_states <- readRDS("PLOTS/WIS_states_models.RDS") &  plot_annotation(title = "States")         & theme(plot.title = element_text(hjust = 0.5, size = 18))
+    
+    t_all    <- grid::textGrob("National level", gp = gpar(fontfamily = "LM Roman 10", cex = 1.5))
+    t_ages   <- grid::textGrob("Age groups",     gp = gpar(fontfamily = "LM Roman 10", cex = 1.5))
+    t_states <- grid::textGrob("States",         gp = gpar(fontfamily = "LM Roman 10", cex = 1.5))
+     
+    c_all    <- (wrap_elements(panel = t_all)    / p_all)    + plot_layout(heights = c(1, 10))
+    c_ages   <- (wrap_elements(panel = t_ages)   / p_ages)   + plot_layout(heights = c(1, 10))
+    c_states <- (wrap_elements(panel = t_states) / p_states) + plot_layout(heights = c(1, 10))
+    
+    p_total3 <-   wrap_elements(c_all    + plot_annotation(theme = theme(plot.margin = margin(-15, 0, -5, 0)))) /
+                  wrap_elements(c_states + plot_annotation(theme = theme(plot.margin = margin(-15, 0, -5, 0)))) /
+                  wrap_elements(c_ages   + plot_annotation(theme = theme(plot.margin = margin(-15, 0, -5, 0))))
+    ggsave(filename = "PLOTS/WIS_3.jpeg", plot = p_total3, width = 3500, height = 4600, units = c("px"), dpi = 300, bg = "white") 
+  }
 }
 
 ##################################################

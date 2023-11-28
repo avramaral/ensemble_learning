@@ -124,11 +124,13 @@ rownames(sum_median) <- 1:nrow(sum_median)
 colnames(sum_median) <- c("group", "wis")
 
 plot_comb <- function (data, name = "Mean", ylim = c(75, 200), col = "red", ...) {
+  set.seed(1)
+  data$group <- data$group + rnorm(length(data$group), 0, 0.1)
   p <- ggplot(data) + 
     geom_point(aes(x = group, y = wis), shape = 21, size = 2, color = col, fill = NA, stroke = 1) +
     scale_y_continuous(breaks = seq(ylim[1], ylim[2], length.out = 6)) +
-    scale_x_continuous(breaks = seq(min(data$group), max(data$group))) +
-    labs(x = "Number of models", y = "WIS", title = name) +
+    scale_x_continuous(breaks = 1:8) + # seq(min(data$group), max(data$group))) +
+    labs(x = "Number of models", y = "WIS (Avg. over time points and horizons)", title = name) +
     expand_limits(y = ylim) +
     theme_bw() +
     theme(legend.position = "none",
@@ -214,7 +216,9 @@ shape_plot <- 21 # 23
 p1_updated <- p1 + geom_point(data = wis_mean  , aes(x = n_models, y = value), color = common_col, fill = common_fil, size = 2, shape = shape_plot, stroke = 1) + geom_hline(yintercept = sum_mean[  nrow(sum_mean  ), 2], linetype = "dashed")
 p2_updated <- p2 + geom_point(data = wis_median, aes(x = n_models, y = value), color = common_col, fill = common_fil, size = 2, shape = shape_plot, stroke = 1) + geom_hline(yintercept = sum_median[nrow(sum_median), 2], linetype = "dashed")
 
-tmp_ttl <- paste("WIS (model selection) ", ifelse(horiz, "varying weights horizon", "shared weights horizon"), sep = "")
-p_total_updated <- p1_updated + p2_updated + plot_annotation(title = tmp_ttl, theme = theme(plot.margin = margin(), text = element_text(size = 14, family = "LM Roman 10")))
+tmp_ttl <- "" # paste("WIS (model selection) ", ifelse(horiz, "varying weights horizon", "shared weights horizon"), sep = "")
+p_total_updated <- p1_updated + p2_updated # + plot_annotation(title = tmp_ttl, theme = theme(plot.margin = margin(), text = element_text(size = 14, family = "LM Roman 10")))
 p_total_updated
-ggsave(filename = paste("PLOTS/WIS_selection_horiz_", horiz, ".jpeg", sep = ""), plot = p_total_updated, width = 3500, height = 1400, units = c("px"), dpi = 300, bg = "white") 
+
+saveRDS(object = p_total_updated, file = paste("PLOTS/SELECTION/WIS_selection_horiz_", horiz, ".RDS", sep = ""))
+ggsave(filename = paste("PLOTS/SELECTION/WIS_selection_horiz_", horiz, ".jpeg", sep = ""), plot = p_total_updated, width = 3500, height = 1400, units = c("px"), dpi = 300, bg = "white") 

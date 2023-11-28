@@ -398,6 +398,66 @@ compute_wis_three_components <- function (data, truth_data, start_date, end_date
 }
 
 ##################################################
+
+compute_wis_three_components_stratified <- function (data, truth_data, start_date, end_date, horizon, models, probs = c(0.025, 0.100, 0.250, 0.500, 0.750, 0.900, 0.975), skip_first_days = 1, verbose = TRUE, ...) {
+  
+  days <- seq(start_date + skip_first_days, end_date, by = "1 day")
+  
+  if (strata == "states") { n_strata <- 16 } else if (strata == "ages") { n_strata <- 6 } else { stop("error") }
+  if (strata == "states") { ss <- unique(data$location) } else if (strata == "ages") { ss <- unique(data$age_group) }
+  
+  wis <- array(data = 0, dim = c(length(days), length(models), n_strata))
+  
+  wis_sprd <- array(data = 0, dim = c(length(days), length(models), n_strata))
+  wis_over <- array(data = 0, dim = c(length(days), length(models), n_strata))
+  wis_undr <- array(data = 0, dim = c(length(days), length(models), n_strata))
+  
+  if (verbose) { b <- txtProgressBar(min = 0, max = length(days), initial = 0) }
+  for (k in 1:length(days)) {
+    dt <- days[k]
+    td <- dt + horizon
+    
+    sliced_data <- data |> filter(forecast_date == dt, target_end_date == td, type == "quantile")
+    sliced_y <- truth_data |> filter(date == td) |> select(truth) |> c() |> unlist()
+    
+    names(sliced_y) <- ss
+    
+    for (m in 1:length(models)) {
+      for (s in 1:length(ss)) {
+        
+        if (strata == "states") {
+          probs_tmp <- sliced_data[((sliced_data$model == models[m]) & (sliced_data$location == ss[s]) & (sliced_data$quantile %in% probs)), ]$quantile
+          quant_tmp <- sliced_data[((sliced_data$model == models[m]) & (sliced_data$location == ss[s]) & (sliced_data$quantile %in% probs)), ]$value
+        } else {
+          probs_tmp <- sliced_data[((sliced_data$model == models[m]) & (sliced_data$age_group == ss[s]) & (sliced_data$quantile %in% probs)), ]$quantile
+          quant_tmp <- sliced_data[((sliced_data$model == models[m]) & (sliced_data$age_group == ss[s]) & (sliced_data$quantile %in% probs)), ]$value
+        }
+        
+        wis[k, m, s]      <- compute_wis(probs = probs_tmp, quant = quant_tmp, y = sliced_y[ss[s]], average = TRUE)
+        wis_sprd[k, m, s] <- compute_wis(probs = probs_tmp, quant = quant_tmp, y = median(quant_tmp), average = TRUE)
+        diff_wis <- wis[k, m, s] - wis_sprd[k, m, s]
+        if (length(quant_tmp) != 0) {
+          if (median(quant_tmp) > sliced_y[s]) {
+            wis_over[k, m, s] <- diff_wis
+            wis_undr[k, m, s] <- 0
+          } else {
+            wis_undr[k, m, s] <- diff_wis
+            wis_over[k, m, s] <- 0
+          }  
+        } else {
+          wis_over[k, m, s] <- NaN
+          wis_undr[k, m, s] <- NaN
+        }
+      }
+    }
+    if (verbose) { setTxtProgressBar(b, k) }
+  }
+  if (verbose) { close(b) }
+  
+  list(wis = wis, wis_sprd = wis_sprd, wis_over = wis_over, wis_undr = wis_undr)
+}
+
+##################################################
 ##################################################
 ##################################################
 
@@ -440,7 +500,7 @@ wis_distance <- function (q_vect, obs_vect, q_levels = c(0.025, 0.1, 0.25, 0.5, 
 ##################################################
 ##################################################
 
-compute_wis_truth <- function (data, truth_data, models, horizon, start_date, end_date, probs =  c(0.025, 0.100, 0.250, 0.500, 0.750, 0.900, 0.975), skip_first_days = 41, verbose = TRUE, ...) {
+compute_wis_truth <- function (data, truth_data, models, horizon, start_date, end_date, probs = c(0.025, 0.100, 0.250, 0.500, 0.750, 0.900, 0.975), skip_first_days = 41, verbose = TRUE, ...) {
   wis <- list()
   wis_summ <- list()
   wis_sprd <- list()
@@ -459,12 +519,27 @@ compute_wis_truth <- function (data, truth_data, models, horizon, start_date, en
     if (verbose) { print(paste("Horizon: ", h, sep = "")) }
     
     # Make all models comparable. Commonly, `skip_first_days = 40 + 1`
-    wis[[as.character(h)]] <- compute_wis_three_components(data = data, truth_data = truth_data, skip_first_days = skip_first_days, start_date = start_date, end_date = end_date, horizon = h, models = models, probs = probs, verbose = verbose)
-    wis_summ[[as.character(h)]] <- wis[[as.character(h)]]$wis      |> colMeans(na.rm = TRUE)
-    wis_sprd[[as.character(h)]] <- wis[[as.character(h)]]$wis_sprd |> colMeans(na.rm = TRUE)
-    wis_over[[as.character(h)]] <- wis[[as.character(h)]]$wis_over |> colMeans(na.rm = TRUE)
-    wis_undr[[as.character(h)]] <- wis[[as.character(h)]]$wis_undr |> colMeans(na.rm = TRUE)
     
+    if (strata == "all") {
+      
+      wis[[as.character(h)]] <- compute_wis_three_components(data = data, truth_data = truth_data, skip_first_days = skip_first_days, start_date = start_date, end_date = end_date, horizon = h, models = models, probs = probs, verbose = verbose)
+      
+      wis_summ[[as.character(h)]] <- wis[[as.character(h)]]$wis      |> colMeans(na.rm = TRUE)
+      wis_sprd[[as.character(h)]] <- wis[[as.character(h)]]$wis_sprd |> colMeans(na.rm = TRUE)
+      wis_over[[as.character(h)]] <- wis[[as.character(h)]]$wis_over |> colMeans(na.rm = TRUE)
+      wis_undr[[as.character(h)]] <- wis[[as.character(h)]]$wis_undr |> colMeans(na.rm = TRUE)
+      
+    } else if ((strata == "states") | (strata == "ages")) {
+      
+      wis[[as.character(h)]] <- compute_wis_three_components_stratified(data = data, truth_data = truth_data, skip_first_days = skip_first_days, start_date = start_date, end_date = end_date, horizon = h, models = models, probs = probs, verbose = verbose)
+      
+      wis_summ[[as.character(h)]] <- wis[[as.character(h)]]$wis      |> apply(MARGIN = 2, FUN = mean, na.rm = TRUE)
+      wis_sprd[[as.character(h)]] <- wis[[as.character(h)]]$wis_sprd |> apply(MARGIN = 2, FUN = mean, na.rm = TRUE)
+      wis_over[[as.character(h)]] <- wis[[as.character(h)]]$wis_over |> apply(MARGIN = 2, FUN = mean, na.rm = TRUE)
+      wis_undr[[as.character(h)]] <- wis[[as.character(h)]]$wis_undr |> apply(MARGIN = 2, FUN = mean, na.rm = TRUE)
+      
+    } else { stop("Error.") }
+  
     wis_summ_avg <- wis_summ_avg + wis_summ[[as.character(h)]] 
     wis_sprd_avg <- wis_sprd_avg + wis_sprd[[as.character(h)]]
     wis_over_avg <- wis_over_avg + wis_over[[as.character(h)]]
@@ -1805,7 +1880,7 @@ par_weights_scale <- function (theta, phi, wis, std_wis = TRUE, ...) {
 ##################################################
 ##################################################
 
-weights_tibble <- function (ensemble, r, models, horizon, probs = c(0.025, 0.100, 0.250, 0.500, 0.750, 0.900, 0.975), skip_first_days = 1, ens_model = NULL, horiz = TRUE, ...) {
+weights_tibble <- function (ensemble, r, models, horizon, probs = c(0.025, 0.100, 0.250, 0.500, 0.750, 0.900, 0.975), skip_first_days = 1, ens_model = NULL, horiz = TRUE, excep = FALSE, ...) {
   days <- seq(r[1] + skip_first_days, r[2], by = "1 day")
   w_hat <- data.frame(forecast_date = as.Date(character()), horizon = character(), model = character(), quant = double(), value = double(), stringsAsFactors = FALSE)
   w_hat <- as_tibble(w_hat)
@@ -1821,7 +1896,12 @@ weights_tibble <- function (ensemble, r, models, horizon, probs = c(0.025, 0.100
             if (ens_model == "DISW") {
               value <- ensemble[[as.character(dt)]][[as.character(horizon[i])]]$weights[, q][m]
             } else {
-              value <- ensemble[[as.character(dt)]][[as.character(horizon[i])]]$weights[q, ][m]
+              if (excep) { # Useless
+                value <- ensemble[[as.character(dt)]]$weights[q, ][m]
+              } else {
+                value <- ensemble[[as.character(dt)]][[as.character(horizon[i])]]$weights[q, ][m]
+              }
+              
             }
             w_hat <- w_hat |> add_row(forecast_date = dt, horizon = as.character(horizon[i]), model = models[m], quant = probs[q], value = value)
           }
