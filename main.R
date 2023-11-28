@@ -51,7 +51,7 @@ source("aux.R")
 ens_method <- "wis" # c("wis", "pinball", "ranked_unweighted")
 skip_recent_days <- FALSE # c(TRUE, FALSE)
 
-training_size <- 90
+training_size <- 200 # 90
 uncertain_size <- 40
 
 exploratory_wis <- FALSE # Plotting score for all individual and naive ensemble models
@@ -65,7 +65,7 @@ post_select_mod <- "KIT"
 
 method <- "Mean" # c("Mean", "Median", "all_quant") # How to summarize the recent past
 
-strata <- "ages" # c("states", "ages", "all")
+strata <- "all" # c("states", "ages", "all")
 
 if (strata == "states") {
   state_idx <- 1:16
