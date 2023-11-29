@@ -205,6 +205,64 @@ plot_wis_bar_ensemble <- function (df_wis, wis_summ, models, colors, ylim_manual
 }
 
 ##################################################
+
+plot_wis_bar_size <- function (df_wis, wis_summ, models, colors, ylim_manual = 100, skip_space = TRUE, ...) {
+
+  # Compute the total WIS based on the 3-part decomposition
+  df_wis_total <- data.frame(model = rep(NA, length(models)), wis = rep(NA, length(models)))
+  df_wis_total$model <- models
+  df_wis_total$model <- factor(x = df_wis_total$model, levels = models)
+  df_wis_total$wis <- Reduce(`+`, wis_summ) / length(wis_summ)
+  
+  if (skip_space) {
+    df_wis$model <- as.character(df_wis$model)
+    df_wis <- rbind(df_wis, c(as.factor("space"), 0, "sprd"))
+    df_wis <- rbind(df_wis, c(as.factor("space"), 0, "over"))
+    df_wis <- rbind(df_wis, c(as.factor("space"), 0, "undr"))
+    df_wis$model <- factor(x = df_wis$model, levels = c(models[1:3], "space", models[4:5]), labels = c(models[1:3], "space", models[4:5]))
+    df_wis$wis <- as.numeric(df_wis$wis)
+  }
+  
+  if (skip_space) {
+    colors_ordered <- c(colors[1:3], "cyan", colors[4:5])
+    names(colors_ordered) <- c(models[1:3], "space", models[4:5])
+  } else {
+    colors_ordered <- colors
+    names(colors_ordered) <- models
+  }
+  
+  pp <- ggplot() +
+    geom_bar(data = df_wis, aes(x = model, y = wis), fill = "white", stat = "identity") +
+    geom_bar(data = df_wis, aes(x = model, y = wis, fill = model, alpha = component, color = model), stat = "identity") +
+    geom_label(
+      data = df_wis_total, aes(x = model, y = 0.5 * as.numeric(wis), label = sprintf("%0.2f", round(as.numeric(wis), digits = 2))),
+      fill = "white", alpha = 1, hjust = 0.5,
+      label.r = unit(0.15, "lines"),
+      size = 10 / .pt,
+      family = "LM Roman 10",
+      label.padding = unit(0.2, "lines") 
+    ) + 
+    scale_fill_manual(values = colors_ordered, guide = "none") +
+    scale_color_manual(values = colors_ordered, guide = "none") +
+    scale_alpha_manual(
+      values = c(0.5, 0.2, 1.0), 
+      labels = c("Overprediction", "Spread", "Underprediction"),
+      guide = guide_legend(reverse = TRUE, title.position = "top", title.hjust = 0.5)
+    ) +
+    { if ( skip_space) scale_x_discrete(limits = rev(c(models[1:3], "space", models[4:5])), labels = rev(c(models[1:3], " ", models[4:5])), drop = FALSE) } +
+    { if (!skip_space) scale_x_discrete(limits = rev(models), drop = FALSE) } +
+    labs(x = NULL, y = "WIS (Averaged over time points and horizons)", color = "Model", alpha = "Decomposition of WIS") +
+    ylim(0, ylim_manual) +
+    coord_flip() +
+    theme_bw() +
+    theme(legend.position = "bottom", text = element_text(size = 16, family = "LM Roman 10"), 
+          axis.ticks.y = element_blank()
+    )
+  
+  pp
+}
+
+##################################################
 ##################################################
 ##################################################
 
