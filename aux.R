@@ -54,7 +54,7 @@ plot_wis_bar <- function (df_wis, wis_summ, models, colors, ylim_manual = 200, s
     ) +
     { if ( skip_space) scale_x_discrete(limits = rev(c(models[1:8], "space", models[9:10])), labels = rev(c(models[1:8], " ", models[9:10])), drop = FALSE) } +
     { if (!skip_space) scale_x_discrete(limits = rev(models), drop = FALSE) } +
-    labs(x = NULL, y = "WIS (Averaged over time points and horizons)", color = "Model", alpha = "Decomposition of WIS") +
+    labs(x = NULL, y = "WIS (Averaged all)", color = "Model", alpha = "Decomposition of WIS") +
     ylim(0, ylim_manual) +
     coord_flip() +
     theme_bw() +
@@ -128,7 +128,7 @@ plot_wis_bar_stratified <- function (df_wis, wis_summ, models, colors, ylim_manu
     ) +
     { if ( skip_space) scale_x_discrete(limits = rev(c(models[1:8], "space", models[9:10])), labels = rev(c(models[1:8], " ", models[9:10])), drop = FALSE) } +
     { if (!skip_space) scale_x_discrete(limits = rev(models), drop = FALSE) } +
-    labs(x = NULL, y = "WIS (Averaged over time points and horizons)", color = "Model", alpha = "Decomposition of WIS") +
+    labs(x = NULL, y = "WIS (Averaged all)", color = "Model", alpha = "Decomposition of WIS") +
     ylim(0, ylim_manual) +
     coord_flip() +
     theme_bw() +
@@ -193,7 +193,7 @@ plot_wis_bar_ensemble <- function (df_wis, wis_summ, models, colors, ylim_manual
     ) +
     { if ( skip_space) scale_x_discrete(limits = rev(c(models[1:8], "space", models[9:10])), labels = rev(c(models[1:8], " ", models[9:10])), drop = FALSE) } +
     { if (!skip_space) scale_x_discrete(limits = rev(models), drop = FALSE) } +
-    labs(x = NULL, y = "WIS (Averaged over time points and horizons)", color = "Model", alpha = "Decomposition of WIS") +
+    labs(x = NULL, y = "WIS (Averaged all)", color = "Model", alpha = "Decomposition of WIS") +
     ylim(0, ylim_manual) +
     coord_flip() +
     theme_bw() +
@@ -251,7 +251,7 @@ plot_wis_bar_size <- function (df_wis, wis_summ, models, colors, ylim_manual = 1
     ) +
     { if ( skip_space) scale_x_discrete(limits = rev(c(models[1:3], "space", models[4:5])), labels = rev(c(models[1:3], " ", models[4:5])), drop = FALSE) } +
     { if (!skip_space) scale_x_discrete(limits = rev(models), drop = FALSE) } +
-    labs(x = NULL, y = "WIS (Averaged over time points and horizons)", color = "Model", alpha = "Decomposition of WIS") +
+    labs(x = NULL, y = "WIS (Averaged all)", color = "Model", alpha = "Decomposition of WIS") +
     ylim(0, ylim_manual) +
     coord_flip() +
     theme_bw() +
@@ -547,4 +547,58 @@ plotting_horizon_weights <- function (w_hat, r, models, colors, uncertain_size =
   
   pp
 }
+
+##################################################
+##################################################
+##################################################
+
+plot_coverage <- function (coverage_models, models, colors, reference_pts_50 = NULL, reference_pts_95 = NULL, ...) {
+  
+  if (!is.null(reference_pts_50) & !is.null(reference_pts_95)) {
+    reference_pts <- data.frame(model = models, c50 = reference_pts_50, c95 = reference_pts_95)
+    reference_pts$model <- factor(x = models, levels = models, labels = models)
+  }
+  
+  colors_ordered <- colors
+  names(colors_ordered) <- models
+  
+  alphas <- setNames(c(0.75, 0.5), c("50%", "95%"))
+  
+  df_coverage <- as.data.frame(matrix(0, nrow = length(models) * 2, ncol = 4))
+  colnames(df_coverage) <- c("model", "interval", "value", "alpha_v")
+  i = 1
+  for (m in 1:length(models)) {
+    df_coverage[i, ] <- c(models[m], 0.50, coverage_models$coverage_50[[as.character(models[m])]], "50%")
+    i <- i + 1
+  }
+  for (m in 1:length(models)) {
+    df_coverage[i, ] <- c(models[m], 0.95, coverage_models$coverage_95[[as.character(models[m])]], "95%")
+    i <- i + 1
+  }
+  df_coverage$model    <- factor(df_coverage$model, levels = models)
+  df_coverage$interval <- as.numeric(df_coverage$interval)
+  df_coverage$value    <- as.numeric(df_coverage$value)
+  df_coverage$alpha_v  <- factor(df_coverage$alpha_v, levels = names(alphas))
+  
+  pp <- ggplot() + 
+    geom_col(data = df_coverage[df_coverage$interval == 0.95, ], aes(x = model, y = value, fill = model, alpha = alpha_v)) +
+    geom_col(data = df_coverage[df_coverage$interval == 0.50, ], aes(x = model, y = value, fill = model, alpha = alpha_v)) +
+    { if (!is.null(reference_pts_50)) geom_point(data = reference_pts, aes(x = model, y = c50), pch = 23, size = 3.5, fill = "black", color = "white", alpha = alphas["50%"]) } +
+    { if (!is.null(reference_pts_95)) geom_point(data = reference_pts, aes(x = model, y = c95), pch = 23, size = 3.5, fill = "black", color = "white", alpha = alphas["95%"]) } +
+    geom_hline(yintercept = c(0.5, 0.95), linetype = "dashed") +
+    scale_fill_manual(values = colors_ordered, guide = "none") +
+    scale_color_manual(values = colors_ordered, guide = "none") +
+    scale_alpha_manual(values = alphas, labels = names(alphas), guide = guide_legend(reverse = TRUE, title.position = "top", title.hjust = 0.5)) +
+    scale_x_discrete(limits = rev(models), drop = FALSE) + 
+    labs(x = NULL, y = "Empirical coverage (Averaged all)", color = "Model", alpha = "Prediction interval") +
+    ylim(c(0, 1)) +
+    coord_flip() +
+    theme_bw() +
+    theme(legend.position = "bottom", text = element_text(size = 16, family = "LM Roman 10"), 
+          axis.ticks.y = element_blank()
+    )
+  
+  pp
+}
+
 

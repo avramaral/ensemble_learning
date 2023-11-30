@@ -51,7 +51,7 @@ source("aux.R")
 ens_method <- "wis" # c("wis", "pinball", "ranked_unweighted")
 skip_recent_days <- FALSE # c(TRUE, FALSE)
 
-training_size <- 200 # 90
+training_size <- 90
 uncertain_size <- 40
 
 exploratory_wis <- FALSE # Plotting score for all individual and naive ensemble models
@@ -65,7 +65,7 @@ post_select_mod <- "KIT"
 
 method <- "Mean" # c("Mean", "Median", "all_quant") # How to summarize the recent past
 
-strata <- "all" # c("states", "ages", "all")
+strata <- "states" # c("states", "ages", "all")
 
 if (strata == "states") {
   state_idx <- 1:16
@@ -332,40 +332,60 @@ if (length(retrieved_data_files) == 1) {
 # Compute WIS for all models, given truth final data (exploratory analysis)
 ##################################################
 
-# Not implemented for stratified analyses
+# exploratory_wis <- TRUE
 if (exploratory_wis) {
+  
+  if (strata == "all") { tmp_models <- models[1:8]; tmp_colors <- colors[1:8] } else { tmp_models <- models[1:7]; tmp_colors <- colors[1:7] }
   
   # Make all models comparable: `skip_first_days = 40 + 1`
   skip_first_days <- (uncertain_size + 1) + 30
-  wis_truth <- compute_wis_truth(data = data, truth_data = truth_data, models = models, horizon = horizon, start_date = r[1], end_date = r[2], skip_first_days = skip_first_days)
-  
+  wis_truth <- compute_wis_truth(data = data, truth_data = truth_data, models = tmp_models, horizon = horizon, start_date = r[1], end_date = r[2], skip_first_days = skip_first_days, strata = strata)
+
   df_wis <- wis_truth$df_wis
   wis_summ <- wis_truth$wis_summ
+
+  coverage_file <- paste("DATA/TRAINING/COVERAGE/coverage_size_", training_size, "_skip_", as.character(skip_recent_days), "_strata_", strata, "_quant_", as.character(quant), "_horiz_", as.character(horiz), ".RDS", sep = "")
+  
+  if (file.exists(coverage_file)) {
+    coverage_models <- readRDS(file = coverage_file)
+  } else {
+    coverage_models <- compute_coverage(data = data, truth_data = truth_data, models = tmp_models, horizon = horizon, start_date = r[1], end_date = r[2], skip_first_days = skip_first_days, strata = strata)
+    saveRDS(object = coverage_models, file = coverage_file)
+  }
   
   # Bar plot
   reference_pts <- df_wis %>% group_by(model) %>% mutate(total = sum(wis)) %>% ungroup() %>% select(total) %>% c() %>% unlist() %>% unname() %>% unique() %>% round(2)
+  reference_pts_c50 <- coverage_models$coverage_50 %>% unlist() %>% round(2) %>% unname()
+  reference_pts_c95 <- coverage_models$coverage_95 %>% unlist() %>% round(2) %>% unname()
   if (strata == "all") {
     # reference_pts <- c(182.23, 175.92, 125.06, 135.40, 93.67, 137.85, 143.98, 209.49, 81.95, 80.76)
-    wis_bar <- plot_wis_bar(df_wis = df_wis, wis_summ = wis_summ, models = models, colors = colors, ylim_manual = 220, skip_space = TRUE)
+    # reference_pts_c50 <- c(0.17, 0.19, 0.71, 0.09, 0.20, 0.24, 0.27, 0.18, 0.42, 0.37)
+    # reference_pts_c95 <- c(0.49, 0.66, 1.00, 0.27, 0.53, 0.55, 0.65, 0.41, 0.90, 0.75)
+    wis_bar <- plot_wis_bar(df_wis = df_wis, wis_summ = wis_summ, models = tmp_models, colors = tmp_colors, ylim_manual = 220, skip_space = FALSE)
+    coverage_bar <- plot_coverage(coverage_models = coverage_models, models = tmp_models, colors = tmp_colors)
   } else {
     # Ages
     # reference_pts <- c(28.56, 31.77, 22.99, 30.98, 20.60, 23.59, 39.53, 16.28, 16.69)
+    # reference_pts_c50 <- c()
+    # reference_pts_c95 <- c()
     # States 
     # reference_pts <- c(14.99, 12.84, 15.26, 13.89, 17.02, 13.83, 20.37, 10.97, 11.19)
+    # reference_pts_c50 <- c()
+    # reference_pts_c95 <- c()
     if (strata == "states") { ylim_manual <- 25 } else if (strata == "ages") { ylim_manual <- 40 }
     wis_bar <- plot_wis_bar_stratified(df_wis = df_wis, wis_summ = wis_summ, models = models, colors = colors, ylim_manual = ylim_manual, skip_space = TRUE)
   }
 
   # Line plot over the horizons
-  df_wis_horizon_truth <- compute_wis_horizon_truth(models = models, horizon = horizon, wis_summ = wis_summ)
-  wis_line_horizon <- plot_wis_line_horizon(df_wis_horizon = df_wis_horizon_truth, models = models, colors = colors)
+  df_wis_horizon_truth <- compute_wis_horizon_truth(models = tmp_models, horizon = horizon, wis_summ = wis_summ)
+  wis_line_horizon <- plot_wis_line_horizon(df_wis_horizon = df_wis_horizon_truth, models = tmp_models, colors = tmp_colors)
 
   tmp_ttl <- "" # "WIS (original models)"
-  p_total <- wis_bar + wis_line_horizon + plot_annotation(title = tmp_ttl, theme = theme(plot.margin = margin(), text = element_text(size = 14, family = "LM Roman 10")))
+  p_total <- wis_bar + wis_line_horizon + coverage_bar + plot_annotation(title = tmp_ttl, theme = theme(plot.margin = margin(), text = element_text(size = 14, family = "LM Roman 10")))
   saveRDS(object = p_total, file = paste("PLOTS/WIS_", strata, "_models.RDS", sep = ""))
-  ggsave(filename = paste("PLOTS/WIS_", strata, "_models.jpeg", sep = ""), plot = p_total, width = 3500, height = 1400, units = c("px"), dpi = 300, bg = "white") 
+  ggsave(filename = paste("PLOTS/WIS_", strata, "_models.jpeg", sep = ""), plot = p_total, width = 4600, height = 1500, units = c("px"), dpi = 300, bg = "white") 
 
-  if (TRUE) { # Plot all strata
+  if (FALSE) { # Plot all strata
 
     p_all    <- readRDS("PLOTS/WIS_all_models.RDS")    &  plot_annotation(title = "National level") & theme(plot.title = element_text(hjust = 0.5, size = 18))
     p_ages   <- readRDS("PLOTS/WIS_ages_models.RDS")   &  plot_annotation(title = "Age groups")     & theme(plot.title = element_text(hjust = 0.5, size = 18))

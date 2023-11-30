@@ -461,6 +461,124 @@ compute_wis_three_components_stratified <- function (data, truth_data, start_dat
 ##################################################
 ##################################################
 
+compute_coverage <- function (data, truth_data, models, horizon, start_date, end_date, skip_first_days, strata = "all", ...) {
+  
+  days <- seq(start_date + skip_first_days, end_date, by = "1 day")
+  
+  count_50 <- list()
+  count_95 <- list()
+  
+  if (strata == "all") {
+    
+    error_counter <- list()
+    
+    for (m in 1:length(models)) {
+      print(paste("Model: ", models[m], ".", sep = ""))
+      count_50[[as.character(models[m])]] <- 0
+      count_95[[as.character(models[m])]] <- 0
+      
+      b <- txtProgressBar(min = 0, max = length(days), initial = 0)
+      cc <- 0
+      for (k in 1:length(days)) {
+        dt <- days[k]
+        for (h in horizon) {
+          td <- dt + h
+          
+          tmp_data <- data %>% filter(forecast_date == dt, target_end_date == td, model == models[m], !is.na(quantile)) %>% arrange(quantile) %>% select(quantile, value)
+          qqs <- tmp_data$value
+          names(qqs) <- tmp_data$quantile
+          
+          tmp_truth <- truth_data %>% filter(date == td) %>% select(truth) %>% c() %>% unlist()
+          
+          if ((tmp_truth >= qqs[ "0.25"]) & (tmp_truth <= qqs[ "0.75"])) { # 50%
+            count_50[[as.character(models[m])]] <- count_50[[as.character(models[m])]] + 1
+          }
+          
+          if ((tmp_truth >= qqs["0.025"]) & (tmp_truth <= qqs["0.975"])) { # 95%
+            count_95[[as.character(models[m])]] <- count_95[[as.character(models[m])]] + 1
+          }
+          
+          cc <- cc + 1
+        }
+        setTxtProgressBar(b, k)
+      }
+      close(b)
+    }
+    
+    for (m in 1:length(models)) { count_50[[as.character(models[m])]] <- count_50[[as.character(models[m])]] / cc; count_95[[as.character(models[m])]] <- count_95[[as.character(models[m])]] / cc }
+  
+  } else {
+    
+    error_counter <- list(); for (m in 1:length(models)) { error_counter[[m]] <- 0 }
+    
+    if (strata == "states") { ss <- unique(data$location) } else { ss <- unique(data$age_group) }
+
+    for (m in 1:length(models)) {
+      
+      tmp_data_0  <- data %>% filter(model == models[m])
+      tmp_truth_0 <- truth_data
+      
+      print(paste("Model: ", models[m], ".", sep = ""))
+      count_50[[as.character(models[m])]] <- 0
+      count_95[[as.character(models[m])]] <- 0
+      
+      b <- txtProgressBar(min = 0, max = length(days), initial = 0)
+      cc <- 0
+      for (k in 1:length(days)) {
+        dt <- days[k]
+        
+        tmp_data_1  <- tmp_data_0  %>% filter(forecast_date == dt)
+        tmp_truth_1 <- tmp_truth_0
+      
+        for (h in horizon) {
+          td <- dt + h
+          
+          tmp_data_2  <- tmp_data_1  %>% filter(target_end_date == td)
+          tmp_truth_2 <- tmp_truth_1 %>% filter(date == td)
+          
+          for (s in ss) {
+            
+            if (strata == "states") {
+              tmp_data_3  <- tmp_data_2  %>% filter(!is.na(quantile), location  == s) %>% arrange(quantile) %>% select(quantile, value)
+              tmp_truth_3 <- tmp_truth_2 %>% filter(location  == s) %>% select(truth) %>% c() %>% unlist()
+            } else {
+              tmp_data_3  <- tmp_data_2  %>% filter(!is.na(quantile), age_group == s) %>% arrange(quantile) %>% select(quantile, value)
+              tmp_truth_3 <- tmp_truth_2 %>% filter(age_group == s) %>% select(truth) %>% c() %>% unlist()
+            }
+            qqs <- tmp_data_3$value
+            names(qqs) <- tmp_data_3$quantile
+            
+            if (nrow(tmp_data_3) != 0) {
+              
+              if ((tmp_truth_3 >= qqs[ "0.25"]) & (tmp_truth_3 <= qqs[ "0.75"])) { # 50%
+                count_50[[as.character(models[m])]] <- count_50[[as.character(models[m])]] + 1
+              }
+              
+              if ((tmp_truth_3 >= qqs["0.025"]) & (tmp_truth_3 <= qqs["0.975"])) { # 95%
+                count_95[[as.character(models[m])]] <- count_95[[as.character(models[m])]] + 1
+              }
+          
+            } else { error_counter[[m]] <- error_counter[[m]] + 1 }
+            
+            cc <- cc + 1
+          }
+        }
+        setTxtProgressBar(b, k)
+      }
+      close(b)
+    }
+    
+    for (m in 1:length(models)) { count_50[[as.character(models[m])]] <- count_50[[as.character(models[m])]] / cc; count_95[[as.character(models[m])]] <- count_95[[as.character(models[m])]] / cc }
+  }
+  
+  
+  list(coverage_50 = count_50, coverage_95 = count_95, error_counter = error_counter)
+}
+
+##################################################
+##################################################
+##################################################
+
 compute_wis <- function (probs, quant, y, average = TRUE, ...) {
   if (length(probs) != length(quant)) { stop("`probs` and `quant` must have the same size.") }
   partial <- apply(X = data.frame(probs = c(probs), quant = c(quant)), MARGIN = 1, FUN = function (x) {
@@ -500,7 +618,7 @@ wis_distance <- function (q_vect, obs_vect, q_levels = c(0.025, 0.1, 0.25, 0.5, 
 ##################################################
 ##################################################
 
-compute_wis_truth <- function (data, truth_data, models, horizon, start_date, end_date, probs = c(0.025, 0.100, 0.250, 0.500, 0.750, 0.900, 0.975), skip_first_days = 41, verbose = TRUE, ...) {
+compute_wis_truth <- function (data, truth_data, models, horizon, start_date, end_date, probs = c(0.025, 0.100, 0.250, 0.500, 0.750, 0.900, 0.975), skip_first_days = 41, verbose = TRUE, strata = "all", ...) {
   wis <- list()
   wis_summ <- list()
   wis_sprd <- list()

@@ -138,7 +138,7 @@ probs <- c(0.025, 0.100, 0.250, 0.500, 0.750, 0.900, 0.975)
 skip_first_days <- uncertain_size + 30
 
 # Make all models comparable: `skip_first_days = 40 + X` (X = 30; i.e., an extra gap)
-wis_truth <- compute_wis_truth(data = ensemble_data, truth_data = truth_data, models = models, horizon = horizon, start_date = r[1], end_date = r[2], skip_first_days = skip_first_days)
+wis_truth <- compute_wis_truth(data = ensemble_data, truth_data = truth_data, models = models, horizon = horizon, start_date = r[1], end_date = r[2], skip_first_days = skip_first_days, strata = strata)
 
 df_wis <- wis_truth$df_wis
 if (TRUE) {

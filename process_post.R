@@ -119,7 +119,28 @@ wis_line_horizon <- plot_wis_line_horizon(df_wis_horizon = df_wis_horizon_truth,
 if (skip_recent_days) { tmp_mtd <- "omit recent data" } else if (!skip_recent_days & method == "all_quant") { tmp_mtd <- "full set of quantiles" } else { tmp_mtd <- "plug-in point nowcast" }
 tmp_ttl <- "" # paste("WIS (post-processed) ", ifelse(horiz, "varying weights horizon", "shared weights horizon"), " and ", tmp_mtd, sep = "")
 p_total <- wis_bar + wis_line_horizon + plot_annotation(title = tmp_ttl, theme = theme(plot.margin = margin(), text = element_text(size = 14, family = "LM Roman 10")))
+saveRDS(object = p_total, file = paste("PLOTS/POSTPROCESS/WIS_all_post_skip_", skip_recent_days, "_horiz_", horiz, "_method_", method, ".RDS", sep = ""))
 ggsave(filename = paste("PLOTS/POSTPROCESS/WIS_all_post_skip_", skip_recent_days, "_horiz_", horiz, "_method_", method, ".jpeg", sep = ""), plot = p_total, width = 3500, height = 1400, units = c("px"), dpi = 300, bg = "white") 
+
+if (TRUE) { # Plot all training windows
+  
+  p_60  <- readRDS("PLOTS/POSTPROCESS/varying_weights_horizon_and_plug-in_point_nowcast/60/WIS_all_post_skip_FALSE_horiz_TRUE_method_Mean.RDS")  &  plot_annotation(title = "60")  & theme(plot.title = element_text(hjust = 0.5, size = 18))
+  p_90  <- readRDS("PLOTS/POSTPROCESS/varying_weights_horizon_and_plug-in_point_nowcast/90/WIS_all_post_skip_FALSE_horiz_TRUE_method_Mean.RDS")  &  plot_annotation(title = "90")  & theme(plot.title = element_text(hjust = 0.5, size = 18))
+  p_ALL <- readRDS("PLOTS/POSTPROCESS/varying_weights_horizon_and_plug-in_point_nowcast/200/WIS_all_post_skip_FALSE_horiz_TRUE_method_Mean.RDS") &  plot_annotation(title = "ALL") & theme(plot.title = element_text(hjust = 0.5, size = 18))
+  
+  t_60  <- grid::textGrob("60",  gp = gpar(fontfamily = "LM Roman 10", cex = 1.5))
+  t_90  <- grid::textGrob("90",  gp = gpar(fontfamily = "LM Roman 10", cex = 1.5))
+  t_ALL <- grid::textGrob("ALL", gp = gpar(fontfamily = "LM Roman 10", cex = 1.5))
+  
+  c_60  <- (wrap_elements(panel = t_60)  / p_60)  + plot_layout(heights = c(1, 10))
+  c_90  <- (wrap_elements(panel = t_90)  / p_90)  + plot_layout(heights = c(1, 10))
+  c_ALL <- (wrap_elements(panel = t_ALL) / p_ALL) + plot_layout(heights = c(1, 10))
+  
+  p_total3 <-   wrap_elements(c_60  + plot_annotation(theme = theme(plot.margin = margin(-15, 0, -5, 0)))) /
+                wrap_elements(c_90  + plot_annotation(theme = theme(plot.margin = margin(-15, 0, -5, 0)))) /
+                wrap_elements(c_ALL + plot_annotation(theme = theme(plot.margin = margin(-15, 0, -5, 0))))
+  ggsave(filename = "PLOTS/POSTPROCESS/varying_weights_horizon_and_plug-in_point_nowcast/WIS_POST_SIZES_3.jpeg", plot = p_total3, width = 3500, height = 4600, units = c("px"), dpi = 300, bg = "white") 
+}
 
 ##################################################
 # PLOT OTHER POST-PROCESSED MODELS
