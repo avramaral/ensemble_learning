@@ -38,8 +38,8 @@ filtered_data <- filter_data(data = data, truth_data = truth_data, models = mode
 data <- filtered_data$data
 truth_data <- filtered_data$truth_data
 
-models <- c("(60) DISW 4", "(90) DISW 4", "(ALL) DISW 4", "Mean", "Median")
-colors <- c("red", "blue", "yellow", "#009E73", "#60D1B3")
+models <- c("Mean", "Median", "(60) DISW 4", "(90) DISW 4", "(ALL) DISW 4")
+colors <- c("#009E73", "#60D1B3", "red", "blue", "yellow")
 
 naive_ensemble_file <- paste("DATA/UNTRAINED_ENSEMBLE/naive_ensemble_state_", state, "_age_", age, ".RDS", sep = "")
 naive_ensemble <- readRDS(file = naive_ensemble_file)
@@ -68,9 +68,9 @@ DISW_4_1 <- DISW_4_1$new_data
 DISW_4_2 <- DISW_4_2$new_data
 DISW_4_3 <- DISW_4_3$new_data
 
-DISW_4_1$model <- models[1]
-DISW_4_2$model <- models[2]
-DISW_4_3$model <- models[3]
+DISW_4_1$model <- models[3]
+DISW_4_2$model <- models[4]
+DISW_4_3$model <- models[5]
 
 ##########
 ##########
@@ -100,15 +100,27 @@ wis_truth <- compute_wis_truth(data = ensemble_data, truth_data = truth_data, mo
 df_wis <- wis_truth$df_wis
 wis_summ <- wis_truth$wis_summ
 
+coverage_file <- paste("RESULTS/FITTED_OBJECTS/COVERAGE/coverage_different_sizes_state_", state, "_age_", age, "_extra_gap_", skip_first_days, ".RDS", sep = "")
+
+if (file.exists(coverage_file)) {
+  coverage_models <- readRDS(file = coverage_file)
+} else {
+  coverage_models <- compute_coverage(data = ensemble_data, truth_data = truth_data, models = models, horizon = horizon, start_date = r[1], end_date = r[2], skip_first_days = skip_first_days, strata = strata)
+  saveRDS(object = coverage_models, file = coverage_file)
+}
+
 # Bar plot
-wis_bar <- plot_wis_bar_size(df_wis = df_wis, wis_summ = wis_summ, models = models, colors = colors, ylim_manual = 100, skip_space = TRUE)
+wis_bar <- plot_wis_bar_size(df_wis = df_wis, wis_summ = wis_summ, models = models, colors = colors, ylim_manual = 100, skip_space = FALSE)
+
+# Coverage plot
+coverage_bar <- plot_coverage(coverage_models = coverage_models, models = models, colors = colors)
 
 # Line plot over the horizons
 df_wis_horizon_truth <- compute_wis_horizon_truth(models = models, horizon = horizon, wis_summ = wis_summ)
 wis_line_horizon <- plot_wis_line_horizon(df_wis_horizon = df_wis_horizon_truth, models = models, colors = colors)
 
 tmp_ttl <- "" # "WIS (weighted ensemble)"
-p_total <- wis_bar + wis_line_horizon + plot_annotation(title = tmp_ttl, theme = theme(plot.margin = margin(), text = element_text(size = 14, family = "LM Roman 10")))
+p_total <- wis_bar + wis_line_horizon + coverage_bar + plot_annotation(title = tmp_ttl, theme = theme(plot.margin = margin(), text = element_text(size = 14, family = "LM Roman 10")))
 saveRDS(object = p_total, file = paste("PLOTS/ENSEMBLE/DIFFERENT_TRAINING_SIZE/WIS_different_training.RDS", sep = "")) 
 
-ggsave(filename = paste("PLOTS/ENSEMBLE/DIFFERENT_TRAINING_SIZE/WIS_different_training.jpeg", sep = ""), plot = p_total, width = 3500, height = 1400, units = c("px"), dpi = 300, bg = "white") 
+ggsave(filename = paste("PLOTS/ENSEMBLE/DIFFERENT_TRAINING_SIZE/WIS_different_training.jpeg", sep = ""), plot = p_total, width = 4700, height = 1500, units = c("px"), dpi = 300, bg = "white") 

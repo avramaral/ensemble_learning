@@ -5,9 +5,14 @@
 
 plot_wis_bar <- function (df_wis, wis_summ, models, colors, ylim_manual = 200, skip_space = FALSE, reference_pts = NULL, ...) {
   
-  if (!is.null(reference_pts) & skip_space) {
+  if (!is.null(reference_pts) &  skip_space) {
     reference_pts <- data.frame(model = c(models[1:8], "space", models[9:10]), value = c(reference_pts[1:8], NA, reference_pts[9:10]))
     reference_pts$model <- factor(x = reference_pts$model, levels = c(models[1:8], "space", models[9:10]), labels = c(models[1:8], "space", models[9:10]))
+  }
+  
+  if (!is.null(reference_pts) & !skip_space) {
+    reference_pts <- data.frame(model = models, value = reference_pts)
+    reference_pts$model <- factor(x = models, levels = models, labels = models)
   }
   
   # Compute the total WIS based on the 3-part decomposition
@@ -44,7 +49,7 @@ plot_wis_bar <- function (df_wis, wis_summ, models, colors, ylim_manual = 200, s
       family = "LM Roman 10",
       label.padding = unit(0.2, "lines") 
     ) + 
-    { if (!is.null(reference_pts) & skip_space) geom_point(data = reference_pts, aes(x = model, y = value), pch = 5, size = 2) } +
+    { if (!is.null(reference_pts)) geom_point(data = reference_pts, aes(x = model, y = value), pch = 1, size = 3) } +
     scale_fill_manual(values = colors_ordered, guide = "none") +
     scale_color_manual(values = colors_ordered, guide = "none") +
     scale_alpha_manual(
@@ -118,7 +123,7 @@ plot_wis_bar_stratified <- function (df_wis, wis_summ, models, colors, ylim_manu
       family = "LM Roman 10",
       label.padding = unit(0.2, "lines") 
     ) + 
-    { if (!is.null(reference_pts) & skip_space) geom_point(data = reference_pts, aes(x = model, y = value), pch = 5, size = 2) } +
+    { if (!is.null(reference_pts) & skip_space) geom_point(data = reference_pts, aes(x = model, y = value), pch = 1, size = 3) } +
     scale_fill_manual(values = colors_ordered, guide = "none") +
     scale_color_manual(values = colors_ordered, guide = "none") +
     scale_alpha_manual(
@@ -141,7 +146,108 @@ plot_wis_bar_stratified <- function (df_wis, wis_summ, models, colors, ylim_manu
 
 ##################################################
 
-plot_wis_bar_ensemble <- function (df_wis, wis_summ, models, colors, ylim_manual = 200, skip_space = FALSE, ...) {
+plot_wis_bar_stratified_simplified <- function (df_wis, wis_summ, models, colors, ylim_manual = 200, reference_pts = NULL, ...) {
+  
+  if (idx_missing_model == 2) { models <- c(models[1], "ILM",     models[2:7]) } else if (idx_missing_model == 6) { models <- c(models[1:5], "RKI",     models[6:7])  }
+  if (idx_missing_model == 2) { colors <- c(colors[1], "#E69F00", colors[2:7]) } else if (idx_missing_model == 6) { colors <- c(colors[1:5], "#3C4AAD", colors[6:7])  }
+  
+  if (!is.null(reference_pts)) {
+    reference_pts <- data.frame(model = models, value = c(reference_pts[1:(idx_missing_model - 1)], NA, reference_pts[(idx_missing_model):7]))
+    reference_pts$model <- factor(x = reference_pts$model, levels = models, labels = models)
+  }
+  
+  # Compute the total WIS based on the 3-part decomposition
+  df_wis_total <- data.frame(model = rep(NA, length(models)), wis = rep(NA, length(models)))
+  df_wis_total$model <- models
+  df_wis_total$model <- factor(x = df_wis_total$model, levels = models)
+  tmp_wis <- Reduce(`+`, wis_summ) / length(wis_summ)
+  tmp_wis <- c(tmp_wis[1:(idx_missing_model - 1)], NA, tmp_wis[idx_missing_model:7])
+  df_wis_total$wis <- tmp_wis
+  
+  colors_ordered <- colors
+  names(colors_ordered) <- models
+  
+  names(colors_ordered)[idx_missing_model] <- "space"
+  colors_ordered[idx_missing_model] <- "cyan"
+  
+  pp <- ggplot() +
+    geom_bar(data = df_wis, aes(x = model, y = wis), fill = "white", stat = "identity") +
+    geom_bar(data = df_wis, aes(x = model, y = wis, fill = model, alpha = component, color = model), stat = "identity") +
+    geom_label(
+      data = df_wis_total, aes(x = model, y = 0.5 * as.numeric(wis), label = sprintf("%0.2f", round(as.numeric(wis), digits = 2))),
+      fill = "white", alpha = 1, hjust = 0.5,
+      label.r = unit(0.15, "lines"),
+      size = 10 / .pt,
+      family = "LM Roman 10",
+      label.padding = unit(0.2, "lines") 
+    ) + 
+    { if (!is.null(reference_pts)) geom_point(data = reference_pts, aes(x = model, y = value), pch = 1, size = 3) } +
+    scale_fill_manual(values = colors_ordered, guide = "none") +
+    scale_color_manual(values = colors_ordered, guide = "none") +
+    scale_alpha_manual(
+      values = c(0.5, 0.2, 1.0), 
+      labels = c("Overprediction", "Spread", "Underprediction"),
+      guide = guide_legend(reverse = TRUE, title.position = "top", title.hjust = 0.5)
+    ) +
+    { scale_x_discrete(limits = rev(models), drop = FALSE) } +
+    labs(x = NULL, y = "WIS (Averaged all)", color = "Model", alpha = "Decomposition of WIS") +
+    ylim(0, ylim_manual) +
+    coord_flip() +
+    theme_bw() +
+    theme(legend.position = "bottom", text = element_text(size = 16, family = "LM Roman 10"), 
+          axis.ticks.y = element_blank()
+    )
+  
+  pp
+}
+
+##################################################
+
+plot_wis_bar_ensemble <- function (df_wis, wis_summ, models, colors, ylim_manual = 200, ...) {
+  
+  # Compute the total WIS based on the 3-part decomposition
+  df_wis_total <- data.frame(model = rep(NA, length(models)), wis = rep(NA, length(models)))
+  df_wis_total$model <- models
+  df_wis_total$model <- factor(x = df_wis_total$model, levels = models)
+  tmp_wis <- Reduce(`+`, wis_summ) / length(wis_summ)
+  df_wis_total$wis <- tmp_wis
+  
+  colors_ordered <- colors
+  names(colors_ordered) <- models
+
+  pp <- ggplot() +
+    geom_bar(data = df_wis, aes(x = model, y = wis), fill = "white", stat = "identity") +
+    geom_bar(data = df_wis, aes(x = model, y = wis, fill = model, alpha = component, color = model), stat = "identity") +
+    geom_label(
+      data = df_wis_total, aes(x = model, y = 0.5 * as.numeric(wis), label = sprintf("%0.2f", round(as.numeric(wis), digits = 2))),
+      fill = "white", alpha = 1, hjust = 0.5,
+      label.r = unit(0.15, "lines"),
+      size = 10 / .pt,
+      family = "LM Roman 10",
+      label.padding = unit(0.2, "lines") 
+    ) + 
+    scale_fill_manual(values = colors_ordered, guide = "none") +
+    scale_color_manual(values = colors_ordered, guide = "none") +
+    scale_alpha_manual(
+      values = c(0.5, 0.2, 1.0), 
+      labels = c("Overprediction", "Spread", "Underprediction"),
+      guide = guide_legend(reverse = TRUE, title.position = "top", title.hjust = 0.5)
+    ) +
+    scale_x_discrete(limits = rev(models), drop = FALSE) +
+    labs(x = NULL, y = "WIS (Averaged all)", color = "Model", alpha = "Decomposition of WIS") +
+    ylim(0, ylim_manual) +
+    coord_flip() +
+    theme_bw() +
+    theme(legend.position = "bottom", text = element_text(size = 16, family = "LM Roman 10"), 
+          axis.ticks.y = element_blank()
+    )
+  
+  pp
+}
+
+##################################################
+
+plot_wis_bar_ensemble_old <- function (df_wis, wis_summ, models, colors, ylim_manual = 200, skip_space = FALSE, ...) {
   
   models <- c("DISW 1", "DISW 2", "DISW 3", "DISW 4", "AISW 1", "AISW 2", "AISW 3", "AISW 4", "Mean", "Median")
   DISW_colors <- colorRampPalette(c("#8B0000", "#E6ADD8"))(4)
@@ -292,7 +398,7 @@ plot_wis_line_horizon <- function (df_wis_horizon, models, colors, quant = FALSE
 ##################################################
 ##################################################
 
-plot_postprocessed_models <- function (data, nowcasts, truth_data, model, r, training_size, uncertain_size, hh = 0, ens_method = "wis", horizon = -28:0, probs = c(0.025, 0.100, 0.250, 0.500, 0.750, 0.900, 0.975), extra_skip = 0, skip_recent_days = FALSE, ...) {
+plot_postprocessed_models <- function (data, nowcasts, truth_data, model, r, training_size, uncertain_size, hh = 0, ens_method = "wis", horizon = -28:0, probs = c(0.025, 0.100, 0.250, 0.500, 0.750, 0.900, 0.975), extra_skip = 0, skip_recent_days = FALSE, average = FALSE, ...) {
   
   name_method <- ifelse(ens_method == "wis", "DISW", "ISW")
   
@@ -351,6 +457,8 @@ plot_postprocessed_models <- function (data, nowcasts, truth_data, model, r, tra
   
   ##################################################
   
+  # P2
+  
   tmp_data_1 <- data[data$model == model, ]
   tmp_data_2 <- nowcasts[nowcasts$model == model, ]
   tmp_data_2$model <- name_method
@@ -375,22 +483,9 @@ plot_postprocessed_models <- function (data, nowcasts, truth_data, model, r, tra
   df_wis_horizon$model <- factor(df_wis_horizon$model, levels = c(model, "Post-processed"))
   names(cmb_colors) <- c(names(cmb_colors)[1], "Post-processed")
   
-  p2 <- ggplot(data = df_wis_horizon, aes(x = horizon, y = wis, color = model)) +
-    geom_line(linewidth = 1) +
-    scale_color_manual(NULL, values = cmb_colors) +
-    labs(x = "Horizon (days)", y = "WIS (Averaged over time points)", color = "Model") +
-    scale_x_continuous(breaks = 0:5 * -5, minor_breaks = -28:0) +
-    expand_limits(y = 0) +
-    theme_bw() +
-    theme(legend.position = "bottom", 
-          legend.title = element_text(size = 11),
-          legend.text = element_text(size = 11),
-          strip.text = element_text(size = 11, margin = margin(b = 2, t = 2)),
-          axis.title.y = element_text(size = 11),
-          axis.text = element_text(size = 11),
-          text = element_text(size = 11, family = "LM Roman 10"))
-  
   ##################################################
+  
+  # P3
   
   cmb_wis <- list()
   
@@ -405,20 +500,47 @@ plot_postprocessed_models <- function (data, nowcasts, truth_data, model, r, tra
   close(b)
   
   total_days <- ifelse(skip_recent_days, (training_size - uncertain_size), training_size)
-  wis_days <- compute_wis_days(wis = cmb_wis, models = cmb_models, start_date = r[1], end_date = r[2], total_days = total_days)
+  wis_days <- compute_wis_days(wis = cmb_wis, models = cmb_models, start_date = r[1], end_date = r[2], total_days = total_days, average = average)
   
   if (skip_recent_days) { r_1 <- (r[1] - 40 + 1); r_e <- 0 } else { r_1 <- r[1] + 1; r_e <- 0 }
   r_2 <- r[2]
   
+  if (average) {
+    y_lab_temp <- "WIS (Averaged over horizons and M.W. up to 90 days)"
+  } else {
+    y_lab_temp <- "WIS (Averaged over horizons)"
+  }
+  
   wis_days[wis_days$model == name_method, ]$model <- "Post-processed"
+  
+  ##################################################
+  
+  max_y <- max(df_wis_horizon$wis, wis_days$value)
+  
+  p2 <- ggplot(data = df_wis_horizon, aes(x = horizon, y = wis, color = model)) +
+    geom_line(linewidth = 1) +
+    scale_color_manual(NULL, values = cmb_colors) +
+    labs(x = "Horizon (days)", y = "WIS (Averaged over time points)", color = "Model") +
+    scale_x_continuous(breaks = 0:5 * -5, minor_breaks = -28:0) +
+    expand_limits(y = c(0, max_y)) +
+    theme_bw() +
+    theme(legend.position = "bottom", 
+          legend.title = element_text(size = 11),
+          legend.text = element_text(size = 11),
+          strip.text = element_text(size = 11, margin = margin(b = 2, t = 2)),
+          axis.title.y = element_text(size = 11),
+          axis.text = element_text(size = 11),
+          text = element_text(size = 11, family = "LM Roman 10"))
+  
+  
   p3 <- ggplot(data = wis_days, aes(x = forecast_date, y = value, color = model)) +
     geom_line(linewidth = 1, alpha = rep(ifelse(unique(wis_days$forecast_date) < (r_1 + uncertain_size + 1), 0.25, 1), 2)) +
     geom_vline(xintercept = as.numeric(r_1 + uncertain_size + r_e + 1), linetype = "dashed") + 
     geom_vline(xintercept = as.numeric(r_1 + uncertain_size + r_e + 1 + extra_skip), linetype = "dashed") + 
     scale_color_manual(NULL, values = cmb_colors) +
-    expand_limits(y = 0) +
+    expand_limits(y = c(0, max_y)) +
     xlim(c(r_1, r_2)) +
-    labs(x = "Forecast date", y = "WIS (Averaged over horizons and M.W. up to 90 days)") +
+    labs(x = "Forecast date", y = y_lab_temp) +
     theme_bw() +
     theme(legend.position = "none", 
           legend.title = element_text(size = 11),
@@ -583,8 +705,8 @@ plot_coverage <- function (coverage_models, models, colors, reference_pts_50 = N
   pp <- ggplot() + 
     geom_col(data = df_coverage[df_coverage$interval == 0.95, ], aes(x = model, y = value, fill = model, alpha = alpha_v)) +
     geom_col(data = df_coverage[df_coverage$interval == 0.50, ], aes(x = model, y = value, fill = model, alpha = alpha_v)) +
-    { if (!is.null(reference_pts_50)) geom_point(data = reference_pts, aes(x = model, y = c50), pch = 23, size = 3.5, fill = "black", color = "white", alpha = alphas["50%"]) } +
-    { if (!is.null(reference_pts_95)) geom_point(data = reference_pts, aes(x = model, y = c95), pch = 23, size = 3.5, fill = "black", color = "white", alpha = alphas["95%"]) } +
+    { if (!is.null(reference_pts_50)) geom_point(data = reference_pts, aes(x = model, y = c50), pch = 16, size = 3, color = "black", alpha = alphas["50%"]) } +
+    { if (!is.null(reference_pts_95)) geom_point(data = reference_pts, aes(x = model, y = c95), pch = 16, size = 3, color = "black", alpha = alphas["95%"]) } +
     geom_hline(yintercept = c(0.5, 0.95), linetype = "dashed") +
     scale_fill_manual(values = colors_ordered, guide = "none") +
     scale_color_manual(values = colors_ordered, guide = "none") +
@@ -600,5 +722,138 @@ plot_coverage <- function (coverage_models, models, colors, reference_pts_50 = N
   
   pp
 }
+
+##################################################
+##################################################
+##################################################
+
+plot_coverage_stratified <- function (coverage_models, models, colors, reference_pts_50 = NULL, reference_pts_95 = NULL, ...) {
+  
+  if (idx_missing_model == 2) { models <- c(models[1], "ILM",     models[2:7]) } else if (idx_missing_model == 6) { models <- c(models[1:5], "RKI",     models[6:7])  }
+  if (idx_missing_model == 2) { colors <- c(colors[1], "#E69F00", colors[2:7]) } else if (idx_missing_model == 6) { colors <- c(colors[1:5], "#3C4AAD", colors[6:7])  }
+
+  
+  if (!is.null(reference_pts_50) & !is.null(reference_pts_95)) {
+    reference_pts_50 <- c(reference_pts_50[1:(idx_missing_model - 1)], NA, reference_pts_50[idx_missing_model:7])
+    reference_pts_95 <- c(reference_pts_95[1:(idx_missing_model - 1)], NA, reference_pts_95[idx_missing_model:7])
+    
+    reference_pts <- data.frame(model = models, c50 = reference_pts_50, c95 = reference_pts_95)
+    reference_pts$model <- factor(x = models, levels = models, labels = models)
+  }
+  
+  colors_ordered <- colors
+  names(colors_ordered) <- models
+  
+  names(colors_ordered)[idx_missing_model] <- "space"
+  colors_ordered[idx_missing_model] <- "cyan"
+  
+  alphas <- setNames(c(0.75, 0.5), c("50%", "95%"))
+  
+  df_coverage <- as.data.frame(matrix(0, nrow = length(models) * 2, ncol = 4))
+  colnames(df_coverage) <- c("model", "interval", "value", "alpha_v")
+  i = 1
+  for (m in 1:length(models)) {
+    tmp_obj <- coverage_models$coverage_50[[as.character(models[m])]]
+    if (is.null(tmp_obj)) { tmp_obj <- 0 }
+    
+    df_coverage[i, ] <- c(models[m], 0.50, tmp_obj, "50%")
+    i <- i + 1
+  }
+  for (m in 1:length(models)) {
+    tmp_obj <- coverage_models$coverage_95[[as.character(models[m])]]
+    if (is.null(tmp_obj)) { tmp_obj <- 0 }
+    
+    df_coverage[i, ] <- c(models[m], 0.95, tmp_obj, "95%")
+    i <- i + 1
+  }
+
+  df_coverage$model    <- factor(df_coverage$model, levels = models)
+  df_coverage$interval <- as.numeric(df_coverage$interval)
+  df_coverage$value    <- as.numeric(df_coverage$value)
+  df_coverage$alpha_v  <- factor(df_coverage$alpha_v, levels = names(alphas))
+  
+  
+  pp <- ggplot() + 
+    geom_col(data = df_coverage[df_coverage$interval == 0.95, ], aes(x = model, y = value, fill = model, alpha = alpha_v)) +
+    geom_col(data = df_coverage[df_coverage$interval == 0.50, ], aes(x = model, y = value, fill = model, alpha = alpha_v)) +
+    { if (!is.null(reference_pts_50)) geom_point(data = reference_pts, aes(x = model, y = c50), pch = 16, size = 3, color = "black", alpha = alphas["50%"]) } +
+    { if (!is.null(reference_pts_95)) geom_point(data = reference_pts, aes(x = model, y = c95), pch = 16, size = 3, color = "black", alpha = alphas["95%"]) } +
+    geom_hline(yintercept = c(0.5, 0.95), linetype = "dashed") +
+    scale_fill_manual(values = colors_ordered, guide = "none") +
+    scale_color_manual(values = colors_ordered, guide = "none") +
+    scale_alpha_manual(values = alphas, labels = names(alphas), guide = guide_legend(reverse = TRUE, title.position = "top", title.hjust = 0.5)) +
+    scale_x_discrete(limits = rev(models), drop = FALSE) + 
+    labs(x = NULL, y = "Empirical coverage (Averaged all)", color = "Model", alpha = "Prediction interval") +
+    ylim(c(0, 1)) +
+    coord_flip() +
+    theme_bw() +
+    theme(legend.position = "bottom", text = element_text(size = 16, family = "LM Roman 10"), 
+          axis.ticks.y = element_blank()
+    )
+  
+  pp
+}
+
+##################################################
+##################################################
+##################################################
+
+plot_coverage_ensemble <- function (coverage_models, models, colors, reference_pts_50 = NULL, reference_pts_95 = NULL, ...) {
+
+  colors_ordered <- colors
+  names(colors_ordered) <- models
+  
+  alphas <- setNames(c(0.75, 0.5), c("50%", "95%"))
+  
+  df_coverage <- as.data.frame(matrix(0, nrow = length(models) * 2, ncol = 4))
+  colnames(df_coverage) <- c("model", "interval", "value", "alpha_v")
+  i = 1
+  for (m in 1:length(models)) {
+    tmp_obj <- coverage_models$coverage_50[[as.character(models[m])]]
+    if (is.null(tmp_obj)) { tmp_obj <- 0 }
+    
+    df_coverage[i, ] <- c(models[m], 0.50, tmp_obj, "50%")
+    i <- i + 1
+  }
+  for (m in 1:length(models)) {
+    tmp_obj <- coverage_models$coverage_95[[as.character(models[m])]]
+    if (is.null(tmp_obj)) { tmp_obj <- 0 }
+    
+    df_coverage[i, ] <- c(models[m], 0.95, tmp_obj, "95%")
+    i <- i + 1
+  }
+  
+  df_coverage$model    <- factor(df_coverage$model, levels = models)
+  df_coverage$interval <- as.numeric(df_coverage$interval)
+  df_coverage$value    <- as.numeric(df_coverage$value)
+  df_coverage$alpha_v  <- factor(df_coverage$alpha_v, levels = names(alphas))
+  
+  
+  pp <- ggplot() + 
+    geom_col(data = df_coverage[df_coverage$interval == 0.95, ], aes(x = model, y = value, fill = model, alpha = alpha_v)) +
+    geom_col(data = df_coverage[df_coverage$interval == 0.50, ], aes(x = model, y = value, fill = model, alpha = alpha_v)) +
+    { if (!is.null(reference_pts_50)) geom_point(data = reference_pts, aes(x = model, y = c50), pch = 16, size = 3, color = "black", alpha = alphas["50%"]) } +
+    { if (!is.null(reference_pts_95)) geom_point(data = reference_pts, aes(x = model, y = c95), pch = 16, size = 3, color = "black", alpha = alphas["95%"]) } +
+    geom_hline(yintercept = c(0.5, 0.95), linetype = "dashed") +
+    scale_fill_manual(values = colors_ordered, guide = "none") +
+    scale_color_manual(values = colors_ordered, guide = "none") +
+    scale_alpha_manual(values = alphas, labels = names(alphas), guide = guide_legend(reverse = TRUE, title.position = "top", title.hjust = 0.5)) +
+    scale_x_discrete(limits = rev(models), drop = FALSE) + 
+    labs(x = NULL, y = "Empirical coverage (Averaged all)", color = "Model", alpha = "Prediction interval") +
+    ylim(c(0, 1)) +
+    coord_flip() +
+    theme_bw() +
+    theme(legend.position = "bottom", text = element_text(size = 16, family = "LM Roman 10"), 
+          axis.ticks.y = element_blank()
+    )
+  
+  pp
+}
+
+
+
+
+
+
 
 

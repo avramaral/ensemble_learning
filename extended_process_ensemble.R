@@ -45,10 +45,10 @@ filtered_data <- filter_data(data = data, truth_data = truth_data, models = mode
 data <- filtered_data$data
 truth_data <- filtered_data$truth_data
 
-models <- c("DISW 1", "DISW 2", "DISW 3", "DISW 4", "AISW 1", "AISW 2", "AISW 3", "AISW 4", "Mean", "Median")
+models <- c("Mean", "Median", "Post-Mean", "Post-Median", "Mean-Post", "Median-Post", "DISW 1", "DISW 2", "DISW 3", "DISW 4", "AISW 1", "AISW 2", "AISW 3", "AISW 4", "Select-4 Mean", "Select-4 Median")
 DISW_colors <- colorRampPalette(c("#8B0000", "#E6ADD8"))(4)
 AISW_colors <- colorRampPalette(c("#00008B", "#ADD8E6"))(4)
-colors <- c(DISW_colors, AISW_colors, "#009E73", "#60D1B3")
+colors <- c( "#009E73", "#60D1B3", "#FF4500", "#FF7F50", "#9400D3", "#9370DB", DISW_colors, AISW_colors, "#FDDA0D", "#FFFF3F")
 
 naive_ensemble_file <- paste("DATA/UNTRAINED_ENSEMBLE/naive_ensemble_state_", state, "_age_", age, ".RDS", sep = "")
 naive_ensemble <- readRDS(file = naive_ensemble_file)
@@ -59,6 +59,34 @@ r <- range(data$forecast_date)
 ##################################################
 
 reparameterize_file <- ifelse(reparameterize, "new_", "")
+
+# Post-naive
+
+post_naive_file <-  "DATA/UNTRAINED_ENSEMBLE/POST_PROCESSED/new_postprocessed_naive_ensemble_size_90_skip_FALSE_state_DE_age_00+_quant_TRUE_horiz_TRUE.RDS"
+post_naive <- readRDS(file = post_naive_file)
+
+post_mean   <- post_naive |> filter(model == "Mean")
+post_median <- post_naive |> filter(model == "Median")
+
+post_mean$model   <- models[5]
+post_median$model <- models[6]
+
+# Naive-post
+
+mean_post_file   <- "RESULTS/FITTED_OBJECTS/POST_PROCESSED/new_post-processing_model_Mean_size_90_skip_FALSE_state_DE_age_00+_quant_TRUE_horiz_TRUE.RDS"
+median_post_file <- "RESULTS/FITTED_OBJECTS/POST_PROCESSED/new_post-processing_model_Median_size_90_skip_FALSE_state_DE_age_00+_quant_TRUE_horiz_TRUE.RDS"
+
+mean_post   <- readRDS(file = mean_post_file)
+median_post <- readRDS(file = median_post_file)
+
+mean_post_ens   <- mean_post$ensemble
+median_post_ens <- median_post$ensemble
+
+mean_post   <- mean_post$new_data
+median_post <- median_post$new_data
+
+mean_post$model   <- models[3]
+median_post$model <- models[4]
 
 # DISW
 
@@ -82,10 +110,10 @@ DISW_2 <- DISW_2$new_data
 DISW_3 <- DISW_3$new_data
 DISW_4 <- DISW_4$new_data
 
-DISW_1$model <- models[1]
-DISW_2$model <- models[2]
-DISW_3$model <- models[3]
-DISW_4$model <- models[4]
+DISW_1$model <- models[7]
+DISW_2$model <- models[8]
+DISW_3$model <- models[9]
+DISW_4$model <- models[10]
 
 # AISW
 
@@ -109,17 +137,35 @@ AISW_2 <- AISW_2$new_data
 AISW_3 <- AISW_3$new_data
 AISW_4 <- AISW_4$new_data
 
-AISW_1$model <- models[5]
-AISW_2$model <- models[6]
-AISW_3$model <- models[7]
-AISW_4$model <- models[8]
+AISW_1$model <- models[11]
+AISW_2$model <- models[12]
+AISW_3$model <- models[13]
+AISW_4$model <- models[14]
+
+# Select 4
+
+m <- 4
+select_4_mean_file   <- paste("RESULTS/FITTED_OBJECTS/new_method_ranked_unweighted_Mean_",   m ,"_size_90_skip_FALSE_state_DE_age_00+_quant_TRUE_horiz_TRUE.RDS", sep = "")
+select_4_median_file <- paste("RESULTS/FITTED_OBJECTS/new_method_ranked_unweighted_Median_", m ,"_size_90_skip_FALSE_state_DE_age_00+_quant_TRUE_horiz_TRUE.RDS", sep = "")
+
+select_4_mean   <- readRDS(file = select_4_mean_file)
+select_4_median <- readRDS(file = select_4_median_file)
+
+select_4_mean_ens   <- select_4_mean$ensemble
+select_4_median_ens <- select_4_median$ensemble
+
+select_4_mean   <- select_4_mean$new_data
+select_4_median <- select_4_median$new_data
+
+select_4_mean$model   <- models[15]
+select_4_median$model <- models[16]
 
 ##########
 ##########
 
 naive_ensemble <- naive_ensemble[!(naive_ensemble$type == "mean"), ]
 
-ensemble_data <- rbind(naive_ensemble, DISW_1, DISW_2, DISW_3, DISW_4, AISW_1, AISW_2, AISW_3, AISW_4)
+ensemble_data <- rbind(naive_ensemble, post_mean, post_median, mean_post, median_post, DISW_1, DISW_2, DISW_3, DISW_4, AISW_1, AISW_2, AISW_3, AISW_4, select_4_mean, select_4_median)
 
 r <- range(DISW_1$forecast_date)
 ensemble_data <- ensemble_data[(ensemble_data$forecast_date >= r[1]) & (ensemble_data$forecast_date <= r[2]), ]
@@ -135,6 +181,9 @@ probs <- c(0.025, 0.100, 0.250, 0.500, 0.750, 0.900, 0.975)
 
 # Extra gap
 skip_first_days <- 30
+
+###
+
 compute_wis_file <- paste("RESULTS/FITTED_OBJECTS/WIS/wis_size_", training_size, "_state_", state, "_age_", age, "_extra_gap_", skip_first_days, ".RDS", sep = "")
 
 if (file.exists(compute_wis_file)) {
@@ -147,40 +196,41 @@ if (file.exists(compute_wis_file)) {
 }
 
 df_wis <- wis_truth$df_wis
-if (TRUE) {
-  df_wis$model <- as.character(df_wis$model)
-  for (i in 1:nrow(df_wis)) {
-    if (df_wis[i, "model"] == "ISW 1") { df_wis[i, "model"] <- "AISW 1" }   
-    if (df_wis[i, "model"] == "ISW 2") { df_wis[i, "model"] <- "AISW 2" }   
-    if (df_wis[i, "model"] == "ISW 3") { df_wis[i, "model"] <- "AISW 3" }   
-    if (df_wis[i, "model"] == "ISW 4") { df_wis[i, "model"] <- "AISW 4" }   
-  }
-  df_wis$model <- factor(x = df_wis$model, levels = c("Mean", "Median", "DISW 1", "DISW 2", "DISW 3", "DISW 4", "AISW 1", "AISW 2", "AISW 3", "AISW 4"))
-} 
 wis_summ <- wis_truth$wis_summ
 
+###
+
+coverage_file <- paste("RESULTS/FITTED_OBJECTS/COVERAGE/coverage_size_", training_size, "_state_", state, "_age_", age, "_extra_gap_", skip_first_days, ".RDS", sep = "")
+
+if (file.exists(coverage_file)) {
+  coverage_models <- readRDS(file = coverage_file)
+} else {
+  coverage_models <- compute_coverage(data = ensemble_data, truth_data = truth_data, models = models, horizon = horizon, start_date = r[1], end_date = r[2], skip_first_days = skip_first_days, strata = strata)
+  saveRDS(object = coverage_models, file = coverage_file)
+}
+
+###
+
 # Bar plot
-wis_bar <- plot_wis_bar(df_wis = df_wis, wis_summ = wis_summ, models = models, colors = colors, ylim_manual = 100, skip_space = TRUE)
+wis_bar <- plot_wis_bar(df_wis = df_wis, wis_summ = wis_summ, models = models, colors = colors, ylim_manual = 100, skip_space = FALSE)
+
+# Coverage plot
+coverage_bar <- plot_coverage(coverage_models = coverage_models, models = models, colors = colors)
 
 # Line plot over the horizons
 df_wis_horizon_truth <- compute_wis_horizon_truth(models = models, horizon = horizon, wis_summ = wis_summ)
 wis_line_horizon <- plot_wis_line_horizon(df_wis_horizon = df_wis_horizon_truth, models = models, colors = colors)
-# wis_line_horizon <- wis_line_horizon + annotate("text", x = -18, y = 300, label = "1: shared across horizon and omit recent data     ", family = "mono", size = 3) +
-#                                        annotate("text", x = -18, y = 280, label = "2: shared across horizon and plug-in point nowcast", family = "mono", size = 3) + 
-#                                        annotate("text", x = -18, y = 260, label = "3: shared across horizon and full set of quantiles", family = "mono", size = 3) +
-#                                        annotate("text", x = -18, y = 240, label = "4: varying over horizons and plug-in point nowcast", family = "mono", size = 3)
 
-tmp_ttl <- "" # "WIS (weighted ensemble)"
-p_total <- wis_bar + wis_line_horizon + plot_annotation(title = tmp_ttl, theme = theme(plot.margin = margin(), text = element_text(size = 14, family = "LM Roman 10")))
-saveRDS(object = p_total, file = paste("PLOTS/ENSEMBLE/WIS_all_ensemble.RDS", sep = "")) 
+tmp_ttl <- ""
+p_total <- wis_bar + wis_line_horizon + coverage_bar + plot_annotation(title = tmp_ttl, theme = theme(plot.margin = margin(), text = element_text(size = 14, family = "LM Roman 10")))
+ggsave(filename = paste("PLOTS/ENSEMBLE/WIS_all_ensemble.jpeg", sep = ""), plot = p_total, width = 4750, height = 2000, units = c("px"), dpi = 300, bg = "white") 
+saveRDS(object = p_total, file = paste("PLOTS/ENSEMBLE/WIS_all_ensemble.RDS", sep = ""))
 
-ggsave(filename = paste("PLOTS/ENSEMBLE/WIS_all_ensemble.jpeg", sep = ""), plot = p_total, width = 3500, height = 1400, units = c("px"), dpi = 300, bg = "white") 
-
-if (TRUE) { # Plot all strata
+if (FALSE) { # Plot all strata
   
   p_all    <- readRDS("PLOTS/ENSEMBLE/WIS_all_ensemble.RDS")    &  plot_annotation(title = "National level") & theme(plot.title = element_text(hjust = 0.5, size = 18))
-  p_ages   <- readRDS("PLOTS/ENSEMBLE/WIS_ages_ensemble.RDS")   &  plot_annotation(title = "Age groups")     & theme(plot.title = element_text(hjust = 0.5, size = 18))
-  p_states <- readRDS("PLOTS/ENSEMBLE/WIS_states_ensemble.RDS") &  plot_annotation(title = "States")         & theme(plot.title = element_text(hjust = 0.5, size = 18))
+  p_ages   <- readRDS("PLOTS/ENSEMBLE/STRATIFIED/WIS_ages_ensemble.RDS")   &  plot_annotation(title = "Age groups")     & theme(plot.title = element_text(hjust = 0.5, size = 18))
+  p_states <- readRDS("PLOTS/ENSEMBLE/STRATIFIED/WIS_states_ensemble.RDS") &  plot_annotation(title = "States")         & theme(plot.title = element_text(hjust = 0.5, size = 18))
   
   t_all    <- grid::textGrob("National level", gp = gpar(fontfamily = "LM Roman 10", cex = 1.5))
   t_ages   <- grid::textGrob("Age groups",     gp = gpar(fontfamily = "LM Roman 10", cex = 1.5))
@@ -190,143 +240,151 @@ if (TRUE) { # Plot all strata
   c_ages   <- (wrap_elements(panel = t_ages)   / p_ages)   + plot_layout(heights = c(1, 10))
   c_states <- (wrap_elements(panel = t_states) / p_states) + plot_layout(heights = c(1, 10))
   
-  p_total3 <- wrap_elements(c_all    + plot_annotation(theme = theme(plot.margin = margin(-15, 0, -5, 22.5)))) /
-              wrap_elements(c_states + plot_annotation(theme = theme(plot.margin = margin(-15, 0, -5, 22.5)))) /
-              wrap_elements(c_ages   + plot_annotation(theme = theme(plot.margin = margin(-15, 0, -5, 22.5))))
-  ggsave(filename = "PLOTS/ENSEMBLE/WIS_ensemble_3.jpeg", plot = p_total3, width = 3500, height = 4600, units = c("px"), dpi = 300, bg = "white") 
-}
-
-##################################################
-# PLOT WEIGHTS
-# The range `rr` has to be set according to the original data forecast dates
-##################################################
-
-rr <- range(data$forecast_date)
-skip_first_days_1 <- uncertain_size + 1
-skip_first_days_2 <- 1
-
-quant <- TRUE
-horiz <- TRUE
-
-w_hat_file <- paste("RESULTS/w_hat_size_", training_size, "_state_", state, "_age_", age, "_quant_", as.character(quant), "_horiz_", as.character(horiz), ".RDS", sep = "")
-
-if (file.exists(w_hat_file)) {
-  w_hat <- readRDS(file = w_hat_file)
-
-  w_hat_DISW_1 <- w_hat$w_hat_DISW_1
-  w_hat_DISW_2 <- w_hat$w_hat_DISW_2
-  w_hat_DISW_3 <- w_hat$w_hat_DISW_3
-  w_hat_DISW_4 <- w_hat$w_hat_DISW_4
-  w_hat_AISW_1 <- w_hat$w_hat_AISW_1
-  w_hat_AISW_2 <- w_hat$w_hat_AISW_2
-  w_hat_AISW_3 <- w_hat$w_hat_AISW_3
-  w_hat_AISW_4 <- w_hat$w_hat_AISW_4
-
-} else {
-  w_hat_DISW_1 <- weights_tibble(ensemble = DISW_1_ens, r = rr, models = models_orig, horizon = horizon, skip_first_days = skip_first_days_1, probs = probs, ens_model = "DISW", horiz = horiz)
-  w_hat_DISW_2 <- weights_tibble(ensemble = DISW_2_ens, r = rr, models = models_orig, horizon = horizon, skip_first_days = skip_first_days_2, probs = probs, ens_model = "DISW", horiz = horiz)  
-  w_hat_DISW_3 <- weights_tibble(ensemble = DISW_3_ens, r = rr, models = models_orig, horizon = horizon, skip_first_days = skip_first_days_2, probs = probs, ens_model = "DISW", horiz = horiz)
-  w_hat_DISW_4 <- weights_tibble(ensemble = DISW_4_ens, r = rr, models = models_orig, horizon = horizon, skip_first_days = skip_first_days_2, probs = probs, ens_model = "DISW", horiz = horiz)
-  w_hat_AISW_1 <- weights_tibble(ensemble = AISW_1_ens, r = rr, models = models_orig, horizon = horizon, skip_first_days = skip_first_days_1, probs = probs, ens_model = "AISW", horiz = horiz, excep = TRUE)
-  w_hat_AISW_2 <- weights_tibble(ensemble = AISW_2_ens, r = rr, models = models_orig, horizon = horizon, skip_first_days = skip_first_days_2, probs = probs, ens_model = "AISW", horiz = horiz, excep = TRUE)
-  w_hat_AISW_3 <- weights_tibble(ensemble = AISW_3_ens, r = rr, models = models_orig, horizon = horizon, skip_first_days = skip_first_days_2, probs = probs, ens_model = "AISW", horiz = horiz, excep = TRUE)
-  w_hat_AISW_4 <- weights_tibble(ensemble = AISW_4_ens, r = rr, models = models_orig, horizon = horizon, skip_first_days = skip_first_days_2, probs = probs, ens_model = "AISW", horiz = horiz)
+  p_total2 <- wrap_elements(c_states + plot_annotation(theme = theme(plot.margin = margin(-15, 0, -5, 0)))) /
+              wrap_elements(c_ages   + plot_annotation(theme = theme(plot.margin = margin(-15, 0, -5, 0))))
   
-  w_hat <- list(w_hat_DISW_1 = w_hat_DISW_1, w_hat_DISW_2 = w_hat_DISW_2, w_hat_DISW_3 = w_hat_DISW_3, w_hat_DISW_4 = w_hat_DISW_4, w_hat_AISW_1 = w_hat_AISW_1, w_hat_AISW_2 = w_hat_AISW_2, w_hat_AISW_3 = w_hat_AISW_3, w_hat_AISW_4 = w_hat_AISW_4)
-  saveRDS(object = w_hat, file = w_hat_file)
+  p_total3 <- wrap_elements(c_all    + plot_annotation(theme = theme(plot.margin = margin(-15, 0, -5, 0)))) /
+              wrap_elements(c_states + plot_annotation(theme = theme(plot.margin = margin(-15, 0, -5, 0)))) /
+              wrap_elements(c_ages   + plot_annotation(theme = theme(plot.margin = margin(-15, 0, -5, 0)))) + plot_layout(heights = c(1.5, 1, 1))
+  
+  ggsave(filename = "PLOTS/ENSEMBLE/WIS_ensemble_2.jpeg", plot = p_total2, width = 4500, height = 3066, units = c("px"), dpi = 300, bg = "white")
+  ggsave(filename = "PLOTS/ENSEMBLE/WIS_ensemble_3.jpeg", plot = p_total3, width = 4500, height = 5366, units = c("px"), dpi = 300, bg = "white") 
 }
 
-# Available options for `aggregate_total` and `indep_quant`
-# Aggregated: `aggregate_total = TRUE` and `indep_quant = FALSE` (or `aggregate_total = TRUE` and `indep_quant = TRUE`)
-# Per quantile: `aggregate_total = FALSE` and `indep_quant = TRUE`
-# Per horizon: `aggregate_total = FALSE` and `indep_quant = FALSE`
 
-aggregate_total <- TRUE
-indep_quant <- TRUE
-
-formatted_w_hat_file <- paste("RESULTS/w_hat_per_horizon_size_", training_size, "_state_", state, "_age_", age, "_quant_", as.character(quant), "_horiz_", as.character(horiz), ".RDS", sep = "")
-
-if (file.exists(formatted_w_hat_file) & (!(aggregate_total | indep_quant))) { # Read files `per horizon` (as this takes longer to run)
-  formatted_w_hat <- readRDS(file = formatted_w_hat_file)
-
-  formatted_w_hat_DISW_1 <- formatted_w_hat$formatted_w_hat_DISW_1
-  formatted_w_hat_DISW_2 <- formatted_w_hat$formatted_w_hat_DISW_2
-  formatted_w_hat_DISW_3 <- formatted_w_hat$formatted_w_hat_DISW_3
-  formatted_w_hat_DISW_4 <- formatted_w_hat$formatted_w_hat_DISW_4
-  formatted_w_hat_AISW_1 <- formatted_w_hat$formatted_w_hat_AISW_1
-  formatted_w_hat_AISW_2 <- formatted_w_hat$formatted_w_hat_AISW_2
-  formatted_w_hat_AISW_3 <- formatted_w_hat$formatted_w_hat_AISW_3
-  formatted_w_hat_AISW_4 <- formatted_w_hat$formatted_w_hat_AISW_4
-} else {
-  print("DISW_1")
-  formatted_w_hat_DISW_1 <- format_w_hat(w_hat = w_hat_DISW_1, aggregate_total = aggregate_total, indep_quant = indep_quant)
-  print("DISW_2")
-  formatted_w_hat_DISW_2 <- format_w_hat(w_hat = w_hat_DISW_2, aggregate_total = aggregate_total, indep_quant = indep_quant)
-  print("DISW_3")
-  formatted_w_hat_DISW_3 <- format_w_hat(w_hat = w_hat_DISW_3, aggregate_total = aggregate_total, indep_quant = indep_quant)
-  print("DISW_4")
-  formatted_w_hat_DISW_4 <- format_w_hat(w_hat = w_hat_DISW_4, aggregate_total = aggregate_total, indep_quant = indep_quant)
-  print("AISW_1")
-  formatted_w_hat_AISW_1 <- format_w_hat(w_hat = w_hat_AISW_1, aggregate_total = aggregate_total, indep_quant = indep_quant)
-  print("AISW_2")
-  formatted_w_hat_AISW_2 <- format_w_hat(w_hat = w_hat_AISW_2, aggregate_total = aggregate_total, indep_quant = indep_quant)
-  print("AISW_3")
-  formatted_w_hat_AISW_3 <- format_w_hat(w_hat = w_hat_AISW_3, aggregate_total = aggregate_total, indep_quant = indep_quant)
-  print("AISW_4")
-  formatted_w_hat_AISW_4 <- format_w_hat(w_hat = w_hat_AISW_4, aggregate_total = aggregate_total, indep_quant = indep_quant)
-
-  if (!(aggregate_total | indep_quant)) {
-    saveRDS(object = list(formatted_w_hat_DISW_1 = formatted_w_hat_DISW_1,
-                          formatted_w_hat_DISW_2 = formatted_w_hat_DISW_2,
-                          formatted_w_hat_DISW_3 = formatted_w_hat_DISW_3,
-                          formatted_w_hat_DISW_4 = formatted_w_hat_DISW_4,
-                          formatted_w_hat_AISW_1 = formatted_w_hat_AISW_1,
-                          formatted_w_hat_AISW_2 = formatted_w_hat_AISW_2,
-                          formatted_w_hat_AISW_3 = formatted_w_hat_AISW_3,
-                          formatted_w_hat_AISW_4 = formatted_w_hat_AISW_4), file = formatted_w_hat_file)
+if (FALSE) {
+  
+  ##################################################
+  # PLOT WEIGHTS
+  # The range `rr` has to be set according to the original data forecast dates
+  ##################################################
+  
+  rr <- range(data$forecast_date)
+  skip_first_days_1 <- uncertain_size + 1
+  skip_first_days_2 <- 1
+  
+  quant <- TRUE
+  horiz <- TRUE
+  
+  w_hat_file <- paste("RESULTS/w_hat_size_", training_size, "_state_", state, "_age_", age, "_quant_", as.character(quant), "_horiz_", as.character(horiz), ".RDS", sep = "")
+  
+  if (file.exists(w_hat_file)) {
+    w_hat <- readRDS(file = w_hat_file)
+    
+    w_hat_DISW_1 <- w_hat$w_hat_DISW_1
+    w_hat_DISW_2 <- w_hat$w_hat_DISW_2
+    w_hat_DISW_3 <- w_hat$w_hat_DISW_3
+    w_hat_DISW_4 <- w_hat$w_hat_DISW_4
+    w_hat_AISW_1 <- w_hat$w_hat_AISW_1
+    w_hat_AISW_2 <- w_hat$w_hat_AISW_2
+    w_hat_AISW_3 <- w_hat$w_hat_AISW_3
+    w_hat_AISW_4 <- w_hat$w_hat_AISW_4
+    
+  } else {
+    w_hat_DISW_1 <- weights_tibble(ensemble = DISW_1_ens, r = rr, models = models_orig, horizon = horizon, skip_first_days = skip_first_days_1, probs = probs, ens_model = "DISW", horiz = horiz)
+    w_hat_DISW_2 <- weights_tibble(ensemble = DISW_2_ens, r = rr, models = models_orig, horizon = horizon, skip_first_days = skip_first_days_2, probs = probs, ens_model = "DISW", horiz = horiz)  
+    w_hat_DISW_3 <- weights_tibble(ensemble = DISW_3_ens, r = rr, models = models_orig, horizon = horizon, skip_first_days = skip_first_days_2, probs = probs, ens_model = "DISW", horiz = horiz)
+    w_hat_DISW_4 <- weights_tibble(ensemble = DISW_4_ens, r = rr, models = models_orig, horizon = horizon, skip_first_days = skip_first_days_2, probs = probs, ens_model = "DISW", horiz = horiz)
+    w_hat_AISW_1 <- weights_tibble(ensemble = AISW_1_ens, r = rr, models = models_orig, horizon = horizon, skip_first_days = skip_first_days_1, probs = probs, ens_model = "AISW", horiz = horiz, excep = TRUE)
+    w_hat_AISW_2 <- weights_tibble(ensemble = AISW_2_ens, r = rr, models = models_orig, horizon = horizon, skip_first_days = skip_first_days_2, probs = probs, ens_model = "AISW", horiz = horiz, excep = TRUE)
+    w_hat_AISW_3 <- weights_tibble(ensemble = AISW_3_ens, r = rr, models = models_orig, horizon = horizon, skip_first_days = skip_first_days_2, probs = probs, ens_model = "AISW", horiz = horiz, excep = TRUE)
+    w_hat_AISW_4 <- weights_tibble(ensemble = AISW_4_ens, r = rr, models = models_orig, horizon = horizon, skip_first_days = skip_first_days_2, probs = probs, ens_model = "AISW", horiz = horiz)
+    
+    w_hat <- list(w_hat_DISW_1 = w_hat_DISW_1, w_hat_DISW_2 = w_hat_DISW_2, w_hat_DISW_3 = w_hat_DISW_3, w_hat_DISW_4 = w_hat_DISW_4, w_hat_AISW_1 = w_hat_AISW_1, w_hat_AISW_2 = w_hat_AISW_2, w_hat_AISW_3 = w_hat_AISW_3, w_hat_AISW_4 = w_hat_AISW_4)
+    saveRDS(object = w_hat, file = w_hat_file)
   }
-}
-
-# Plotting
-extra_skip <- 30
-if (aggregate_total) { # Aggregated
-  plot_D1 <- plotting_summarized_weights(w_hat = formatted_w_hat_DISW_1$new_w_hat, r = rr, models = models_orig, colors = colors_orig, extra_skip = extra_skip)
-  plot_D2 <- plotting_summarized_weights(w_hat = formatted_w_hat_DISW_2$new_w_hat, r = rr, models = models_orig, colors = colors_orig, extra_skip = extra_skip)
-  plot_D3 <- plotting_summarized_weights(w_hat = formatted_w_hat_DISW_3$new_w_hat, r = rr, models = models_orig, colors = colors_orig, extra_skip = extra_skip)
-  plot_D4 <- plotting_summarized_weights(w_hat = formatted_w_hat_DISW_4$new_w_hat, r = rr, models = models_orig, colors = colors_orig, extra_skip = extra_skip)
-  plot_A1 <- plotting_summarized_weights(w_hat = formatted_w_hat_AISW_1$new_w_hat, r = rr, models = models_orig, colors = colors_orig, extra_skip = extra_skip, y_max = 1.25)
-  plot_A2 <- plotting_summarized_weights(w_hat = formatted_w_hat_AISW_2$new_w_hat, r = rr, models = models_orig, colors = colors_orig, extra_skip = extra_skip, y_max = 1.25)
-  plot_A3 <- plotting_summarized_weights(w_hat = formatted_w_hat_AISW_3$new_w_hat, r = rr, models = models_orig, colors = colors_orig, extra_skip = extra_skip, y_max = 1.25)
-  plot_A4 <- plotting_summarized_weights(w_hat = formatted_w_hat_AISW_4$new_w_hat, r = rr, models = models_orig, colors = colors_orig, extra_skip = extra_skip, y_max = 1.25)
-} else {
-  if (indep_quant) { # Per quantile
-    plot_D1 <- plotting_quantile_weights(w_hat = formatted_w_hat_DISW_1$new_w_hat_total, r = rr, models = models_orig, colors = colors_orig, extra_skip = extra_skip)
-    plot_D2 <- plotting_quantile_weights(w_hat = formatted_w_hat_DISW_2$new_w_hat_total, r = rr, models = models_orig, colors = colors_orig, extra_skip = extra_skip)
-    plot_D3 <- plotting_quantile_weights(w_hat = formatted_w_hat_DISW_3$new_w_hat_total, r = rr, models = models_orig, colors = colors_orig, extra_skip = extra_skip)
-    plot_D4 <- plotting_quantile_weights(w_hat = formatted_w_hat_DISW_4$new_w_hat_total, r = rr, models = models_orig, colors = colors_orig, extra_skip = extra_skip)
-    plot_A1 <- plotting_quantile_weights(w_hat = formatted_w_hat_AISW_1$new_w_hat_total, r = rr, models = models_orig, colors = colors_orig, extra_skip = extra_skip, y_max = 1.25)
-    plot_A2 <- plotting_quantile_weights(w_hat = formatted_w_hat_AISW_2$new_w_hat_total, r = rr, models = models_orig, colors = colors_orig, extra_skip = extra_skip, y_max = 1.25)
-    plot_A3 <- plotting_quantile_weights(w_hat = formatted_w_hat_AISW_3$new_w_hat_total, r = rr, models = models_orig, colors = colors_orig, extra_skip = extra_skip, y_max = 1.25)
-    plot_A4 <- plotting_quantile_weights(w_hat = formatted_w_hat_AISW_4$new_w_hat_total, r = rr, models = models_orig, colors = colors_orig, extra_skip = extra_skip, y_max = 1.25)
-  } else { # Per horizon
-    plot_D1 <- plotting_horizon_weights(w_hat = formatted_w_hat_DISW_1$new_w_hat_total, r = rr, models = models_orig, colors = colors_orig, big_title = "", extra_skip = extra_skip)
-    plot_D2 <- plotting_horizon_weights(w_hat = formatted_w_hat_DISW_2$new_w_hat_total, r = rr, models = models_orig, colors = colors_orig, big_title = "", extra_skip = extra_skip)
-    plot_D3 <- plotting_horizon_weights(w_hat = formatted_w_hat_DISW_3$new_w_hat_total, r = rr, models = models_orig, colors = colors_orig, big_title = "", extra_skip = extra_skip)
-    plot_D4 <- plotting_horizon_weights(w_hat = formatted_w_hat_DISW_4$new_w_hat_total, r = rr, models = models_orig, colors = colors_orig, big_title = "", extra_skip = extra_skip)
-    plot_A1 <- plotting_horizon_weights(w_hat = formatted_w_hat_AISW_1$new_w_hat_total, r = rr, models = models_orig, colors = colors_orig, big_title = "", extra_skip = extra_skip, y_max = 1.25)
-    plot_A2 <- plotting_horizon_weights(w_hat = formatted_w_hat_AISW_2$new_w_hat_total, r = rr, models = models_orig, colors = colors_orig, big_title = "", extra_skip = extra_skip, y_max = 1.25)
-    plot_A3 <- plotting_horizon_weights(w_hat = formatted_w_hat_AISW_3$new_w_hat_total, r = rr, models = models_orig, colors = colors_orig, big_title = "", extra_skip = extra_skip, y_max = 1.25)
-    plot_A4 <- plotting_horizon_weights(w_hat = formatted_w_hat_AISW_4$new_w_hat_total, r = rr, models = models_orig, colors = colors_orig, big_title = "", extra_skip = extra_skip, y_max = 1.25)
+  
+  # Available options for `aggregate_total` and `indep_quant`
+  # Aggregated: `aggregate_total = TRUE` and `indep_quant = FALSE` (or `aggregate_total = TRUE` and `indep_quant = TRUE`)
+  # Per quantile: `aggregate_total = FALSE` and `indep_quant = TRUE`
+  # Per horizon: `aggregate_total = FALSE` and `indep_quant = FALSE`
+  
+  aggregate_total <- TRUE
+  indep_quant <- TRUE
+  
+  formatted_w_hat_file <- paste("RESULTS/w_hat_per_horizon_size_", training_size, "_state_", state, "_age_", age, "_quant_", as.character(quant), "_horiz_", as.character(horiz), ".RDS", sep = "")
+  
+  if (file.exists(formatted_w_hat_file) & (!(aggregate_total | indep_quant))) { # Read files `per horizon` (as this takes longer to run)
+    formatted_w_hat <- readRDS(file = formatted_w_hat_file)
+    
+    formatted_w_hat_DISW_1 <- formatted_w_hat$formatted_w_hat_DISW_1
+    formatted_w_hat_DISW_2 <- formatted_w_hat$formatted_w_hat_DISW_2
+    formatted_w_hat_DISW_3 <- formatted_w_hat$formatted_w_hat_DISW_3
+    formatted_w_hat_DISW_4 <- formatted_w_hat$formatted_w_hat_DISW_4
+    formatted_w_hat_AISW_1 <- formatted_w_hat$formatted_w_hat_AISW_1
+    formatted_w_hat_AISW_2 <- formatted_w_hat$formatted_w_hat_AISW_2
+    formatted_w_hat_AISW_3 <- formatted_w_hat$formatted_w_hat_AISW_3
+    formatted_w_hat_AISW_4 <- formatted_w_hat$formatted_w_hat_AISW_4
+  } else {
+    print("DISW_1")
+    formatted_w_hat_DISW_1 <- format_w_hat(w_hat = w_hat_DISW_1, aggregate_total = aggregate_total, indep_quant = indep_quant)
+    print("DISW_2")
+    formatted_w_hat_DISW_2 <- format_w_hat(w_hat = w_hat_DISW_2, aggregate_total = aggregate_total, indep_quant = indep_quant)
+    print("DISW_3")
+    formatted_w_hat_DISW_3 <- format_w_hat(w_hat = w_hat_DISW_3, aggregate_total = aggregate_total, indep_quant = indep_quant)
+    print("DISW_4")
+    formatted_w_hat_DISW_4 <- format_w_hat(w_hat = w_hat_DISW_4, aggregate_total = aggregate_total, indep_quant = indep_quant)
+    print("AISW_1")
+    formatted_w_hat_AISW_1 <- format_w_hat(w_hat = w_hat_AISW_1, aggregate_total = aggregate_total, indep_quant = indep_quant)
+    print("AISW_2")
+    formatted_w_hat_AISW_2 <- format_w_hat(w_hat = w_hat_AISW_2, aggregate_total = aggregate_total, indep_quant = indep_quant)
+    print("AISW_3")
+    formatted_w_hat_AISW_3 <- format_w_hat(w_hat = w_hat_AISW_3, aggregate_total = aggregate_total, indep_quant = indep_quant)
+    print("AISW_4")
+    formatted_w_hat_AISW_4 <- format_w_hat(w_hat = w_hat_AISW_4, aggregate_total = aggregate_total, indep_quant = indep_quant)
+    
+    if (!(aggregate_total | indep_quant)) {
+      saveRDS(object = list(formatted_w_hat_DISW_1 = formatted_w_hat_DISW_1,
+                            formatted_w_hat_DISW_2 = formatted_w_hat_DISW_2,
+                            formatted_w_hat_DISW_3 = formatted_w_hat_DISW_3,
+                            formatted_w_hat_DISW_4 = formatted_w_hat_DISW_4,
+                            formatted_w_hat_AISW_1 = formatted_w_hat_AISW_1,
+                            formatted_w_hat_AISW_2 = formatted_w_hat_AISW_2,
+                            formatted_w_hat_AISW_3 = formatted_w_hat_AISW_3,
+                            formatted_w_hat_AISW_4 = formatted_w_hat_AISW_4), file = formatted_w_hat_file)
+    }
   }
+  
+  # Plotting
+  extra_skip <- 30
+  if (aggregate_total) { # Aggregated
+    plot_D1 <- plotting_summarized_weights(w_hat = formatted_w_hat_DISW_1$new_w_hat, r = rr, models = models_orig, colors = colors_orig, extra_skip = extra_skip)
+    plot_D2 <- plotting_summarized_weights(w_hat = formatted_w_hat_DISW_2$new_w_hat, r = rr, models = models_orig, colors = colors_orig, extra_skip = extra_skip)
+    plot_D3 <- plotting_summarized_weights(w_hat = formatted_w_hat_DISW_3$new_w_hat, r = rr, models = models_orig, colors = colors_orig, extra_skip = extra_skip)
+    plot_D4 <- plotting_summarized_weights(w_hat = formatted_w_hat_DISW_4$new_w_hat, r = rr, models = models_orig, colors = colors_orig, extra_skip = extra_skip)
+    plot_A1 <- plotting_summarized_weights(w_hat = formatted_w_hat_AISW_1$new_w_hat, r = rr, models = models_orig, colors = colors_orig, extra_skip = extra_skip, y_max = 1.25)
+    plot_A2 <- plotting_summarized_weights(w_hat = formatted_w_hat_AISW_2$new_w_hat, r = rr, models = models_orig, colors = colors_orig, extra_skip = extra_skip, y_max = 1.25)
+    plot_A3 <- plotting_summarized_weights(w_hat = formatted_w_hat_AISW_3$new_w_hat, r = rr, models = models_orig, colors = colors_orig, extra_skip = extra_skip, y_max = 1.25)
+    plot_A4 <- plotting_summarized_weights(w_hat = formatted_w_hat_AISW_4$new_w_hat, r = rr, models = models_orig, colors = colors_orig, extra_skip = extra_skip, y_max = 1.25)
+  } else {
+    if (indep_quant) { # Per quantile
+      plot_D1 <- plotting_quantile_weights(w_hat = formatted_w_hat_DISW_1$new_w_hat_total, r = rr, models = models_orig, colors = colors_orig, extra_skip = extra_skip)
+      plot_D2 <- plotting_quantile_weights(w_hat = formatted_w_hat_DISW_2$new_w_hat_total, r = rr, models = models_orig, colors = colors_orig, extra_skip = extra_skip)
+      plot_D3 <- plotting_quantile_weights(w_hat = formatted_w_hat_DISW_3$new_w_hat_total, r = rr, models = models_orig, colors = colors_orig, extra_skip = extra_skip)
+      plot_D4 <- plotting_quantile_weights(w_hat = formatted_w_hat_DISW_4$new_w_hat_total, r = rr, models = models_orig, colors = colors_orig, extra_skip = extra_skip)
+      plot_A1 <- plotting_quantile_weights(w_hat = formatted_w_hat_AISW_1$new_w_hat_total, r = rr, models = models_orig, colors = colors_orig, extra_skip = extra_skip, y_max = 1.25)
+      plot_A2 <- plotting_quantile_weights(w_hat = formatted_w_hat_AISW_2$new_w_hat_total, r = rr, models = models_orig, colors = colors_orig, extra_skip = extra_skip, y_max = 1.25)
+      plot_A3 <- plotting_quantile_weights(w_hat = formatted_w_hat_AISW_3$new_w_hat_total, r = rr, models = models_orig, colors = colors_orig, extra_skip = extra_skip, y_max = 1.25)
+      plot_A4 <- plotting_quantile_weights(w_hat = formatted_w_hat_AISW_4$new_w_hat_total, r = rr, models = models_orig, colors = colors_orig, extra_skip = extra_skip, y_max = 1.25)
+    } else { # Per horizon
+      plot_D1 <- plotting_horizon_weights(w_hat = formatted_w_hat_DISW_1$new_w_hat_total, r = rr, models = models_orig, colors = colors_orig, big_title = "", extra_skip = extra_skip)
+      plot_D2 <- plotting_horizon_weights(w_hat = formatted_w_hat_DISW_2$new_w_hat_total, r = rr, models = models_orig, colors = colors_orig, big_title = "", extra_skip = extra_skip)
+      plot_D3 <- plotting_horizon_weights(w_hat = formatted_w_hat_DISW_3$new_w_hat_total, r = rr, models = models_orig, colors = colors_orig, big_title = "", extra_skip = extra_skip)
+      plot_D4 <- plotting_horizon_weights(w_hat = formatted_w_hat_DISW_4$new_w_hat_total, r = rr, models = models_orig, colors = colors_orig, big_title = "", extra_skip = extra_skip)
+      plot_A1 <- plotting_horizon_weights(w_hat = formatted_w_hat_AISW_1$new_w_hat_total, r = rr, models = models_orig, colors = colors_orig, big_title = "", extra_skip = extra_skip, y_max = 1.25)
+      plot_A2 <- plotting_horizon_weights(w_hat = formatted_w_hat_AISW_2$new_w_hat_total, r = rr, models = models_orig, colors = colors_orig, big_title = "", extra_skip = extra_skip, y_max = 1.25)
+      plot_A3 <- plotting_horizon_weights(w_hat = formatted_w_hat_AISW_3$new_w_hat_total, r = rr, models = models_orig, colors = colors_orig, big_title = "", extra_skip = extra_skip, y_max = 1.25)
+      plot_A4 <- plotting_horizon_weights(w_hat = formatted_w_hat_AISW_4$new_w_hat_total, r = rr, models = models_orig, colors = colors_orig, big_title = "", extra_skip = extra_skip, y_max = 1.25)
+    }
+  }
+  
+  ggsave(filename = paste("PLOTS/weights_D1.jpeg", sep = ""), plot = plot_D1, width = 3500, height = 2500, units = c("px"), dpi = 300, bg = "white") 
+  ggsave(filename = paste("PLOTS/weights_D2.jpeg", sep = ""), plot = plot_D2, width = 3500, height = 2500, units = c("px"), dpi = 300, bg = "white") 
+  ggsave(filename = paste("PLOTS/weights_D3.jpeg", sep = ""), plot = plot_D3, width = 3500, height = 2500, units = c("px"), dpi = 300, bg = "white") 
+  ggsave(filename = paste("PLOTS/weights_D4.jpeg", sep = ""), plot = plot_D4, width = 3500, height = 2500, units = c("px"), dpi = 300, bg = "white") 
+  ggsave(filename = paste("PLOTS/weights_A1.jpeg", sep = ""), plot = plot_A1, width = 3500, height = 2500, units = c("px"), dpi = 300, bg = "white") 
+  ggsave(filename = paste("PLOTS/weights_A2.jpeg", sep = ""), plot = plot_A2, width = 3500, height = 2500, units = c("px"), dpi = 300, bg = "white") 
+  ggsave(filename = paste("PLOTS/weights_A3.jpeg", sep = ""), plot = plot_A3, width = 3500, height = 2500, units = c("px"), dpi = 300, bg = "white") 
+  ggsave(filename = paste("PLOTS/weights_A4.jpeg", sep = ""), plot = plot_A4, width = 3500, height = 2500, units = c("px"), dpi = 300, bg = "white") 
+  
 }
-
-ggsave(filename = paste("PLOTS/weights_D1.jpeg", sep = ""), plot = plot_D1, width = 3500, height = 2500, units = c("px"), dpi = 300, bg = "white") 
-ggsave(filename = paste("PLOTS/weights_D2.jpeg", sep = ""), plot = plot_D2, width = 3500, height = 2500, units = c("px"), dpi = 300, bg = "white") 
-ggsave(filename = paste("PLOTS/weights_D3.jpeg", sep = ""), plot = plot_D3, width = 3500, height = 2500, units = c("px"), dpi = 300, bg = "white") 
-ggsave(filename = paste("PLOTS/weights_D4.jpeg", sep = ""), plot = plot_D4, width = 3500, height = 2500, units = c("px"), dpi = 300, bg = "white") 
-ggsave(filename = paste("PLOTS/weights_A1.jpeg", sep = ""), plot = plot_A1, width = 3500, height = 2500, units = c("px"), dpi = 300, bg = "white") 
-ggsave(filename = paste("PLOTS/weights_A2.jpeg", sep = ""), plot = plot_A2, width = 3500, height = 2500, units = c("px"), dpi = 300, bg = "white") 
-ggsave(filename = paste("PLOTS/weights_A3.jpeg", sep = ""), plot = plot_A3, width = 3500, height = 2500, units = c("px"), dpi = 300, bg = "white") 
-ggsave(filename = paste("PLOTS/weights_A4.jpeg", sep = ""), plot = plot_A4, width = 3500, height = 2500, units = c("px"), dpi = 300, bg = "white") 
-
-

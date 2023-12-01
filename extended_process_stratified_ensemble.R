@@ -50,10 +50,10 @@ filtered_data <- filter_data(data = data, truth_data = truth_data, models = mode
 data <- filtered_data$data
 truth_data <- filtered_data$truth_data
 
-models <- c("DISW 2", "DISW 4", "AISW 2", "AISW 4", "Mean", "Median")
+models <- c("Mean", "Median", "DISW 2", "DISW 4", "AISW 2", "AISW 4")
 DISW_colors <- colorRampPalette(c("#8B0000", "#E6ADD8"))(4)[c(2, 4)]
 AISW_colors <- colorRampPalette(c("#00008B", "#ADD8E6"))(4)[c(2, 4)]
-colors <- c(DISW_colors, AISW_colors, "#009E73", "#60D1B3")
+colors <- c("#009E73", "#60D1B3", DISW_colors, AISW_colors)
 
 # Naive ensemble
 naive_ensemble_files <- paste("DATA/UNTRAINED_ENSEMBLE/naive_ensemble_state_", state, "_age_", age, ".RDS", sep = "")
@@ -69,9 +69,7 @@ for (i in 1:length(naive_ensemble_files)) {
     naive_ensemble <- rbind(naive_ensemble, tmp_naive_ensemble)
   }
 }
-
 data <- rbind(data, naive_ensemble)
-################
 
 r <- range(data$forecast_date)
 
@@ -95,8 +93,8 @@ DISW_4_ens <- DISW_4$ensemble
 DISW_2 <- DISW_2$new_data
 DISW_4 <- DISW_4$new_data
 
-DISW_2$model <- models[1]
-DISW_4$model <- models[2]
+DISW_2$model <- models[3]
+DISW_4$model <- models[4]
 
 # AISW
 
@@ -112,8 +110,8 @@ AISW_4_ens <- AISW_4$ensemble
 AISW_2 <- AISW_2$new_data
 AISW_4 <- AISW_4$new_data
 
-AISW_2$model <- models[3]
-AISW_4$model <- models[4]
+AISW_2$model <- models[5]
+AISW_4$model <- models[6]
 
 ##########
 ##########
@@ -137,37 +135,54 @@ probs <- c(0.025, 0.100, 0.250, 0.500, 0.750, 0.900, 0.975)
 # Extra gap
 skip_first_days <- uncertain_size + 30
 
-# Make all models comparable: `skip_first_days = 40 + X` (X = 30; i.e., an extra gap)
-wis_truth <- compute_wis_truth(data = ensemble_data, truth_data = truth_data, models = models, horizon = horizon, start_date = r[1], end_date = r[2], skip_first_days = skip_first_days, strata = strata)
+###
+
+compute_wis_file <- paste("RESULTS/FITTED_OBJECTS/WIS/wis_size_", training_size, "_extra_gap_", skip_first_days, "_strata_", strata, ".RDS", sep = "")
+if (file.exists(compute_wis_file)) {
+  wis_truth <- readRDS(file = compute_wis_file)
+} else {
+
+  # Make all models comparable: `skip_first_days = 40 + X` (X = 30; i.e., an extra gap)
+  wis_truth <- compute_wis_truth(data = ensemble_data, truth_data = truth_data, models = models, horizon = horizon, start_date = r[1], end_date = r[2], skip_first_days = skip_first_days, strata = strata)
+  saveRDS(object = wis_truth, file = compute_wis_file)
+}
+
+###
+
+coverage_file <- paste("RESULTS/FITTED_OBJECTS/COVERAGE/coverage_size_", training_size, "_extra_gap_", skip_first_days, "_strata_", strata, ".RDS", sep = "")
+if (file.exists(coverage_file)) {
+  coverage_models <- readRDS(file = coverage_file)
+} else {
+  coverage_models <- compute_coverage(data = ensemble_data, truth_data = truth_data, models = models, horizon = horizon, start_date = r[1], end_date = r[2], skip_first_days = skip_first_days, strata = strata)
+  saveRDS(object = coverage_models, file = coverage_file)
+}
+
+###
 
 df_wis <- wis_truth$df_wis
-if (TRUE) {
-  df_wis$model <- as.character(df_wis$model)
-  for (i in 1:nrow(df_wis)) {
-    if (df_wis[i, "model"] == "ISW 2") { df_wis[i, "model"] <- "AISW 2" }   
-    if (df_wis[i, "model"] == "ISW 4") { df_wis[i, "model"] <- "AISW 4" }   
-  }
-  df_wis$model <- factor(x = df_wis$model, levels = c("DISW 2", "DISW 4", "AISW 2", "AISW 4", "Mean", "Median"))
-} 
 wis_summ <- wis_truth$wis_summ
 
 # Bar plot
 if (strata == "states") { ylim_manual <- 15 } else if (strata == "ages") { ylim_manual <- 20 }
-wis_bar <- plot_wis_bar_ensemble(df_wis = df_wis, wis_summ = wis_summ, models = models, colors = colors, ylim_manual = ylim_manual, skip_space = TRUE)
+wis_bar <- plot_wis_bar_ensemble(df_wis = df_wis, wis_summ = wis_summ, models = models, colors = colors, ylim_manual = ylim_manual)
+
+# Coverage plot
+coverage_bar <- plot_coverage_ensemble(coverage_models = coverage_models, models = models, colors = colors)
 
 # Line plot over the horizons
 df_wis_horizon_truth <- compute_wis_horizon_truth(models = models, horizon = horizon, wis_summ = wis_summ)
 wis_line_horizon <- plot_wis_line_horizon(df_wis_horizon = df_wis_horizon_truth, models = models, colors = colors)
 
+if (FALSE) {
+  wis_bar      <- wis_bar      + theme(plot.margin = margin(0, 5, 0, 42))
+  coverage_bar <- coverage_bar + theme(plot.margin = margin(0, 5, 0, 42))
+}
+
 tmp_ttl <- "" # "WIS (weighted ensemble)"
-p_total <- wis_bar + wis_line_horizon + plot_annotation(title = tmp_ttl, theme = theme(plot.margin = margin(), text = element_text(size = 14, family = "LM Roman 10")))
-saveRDS(object = p_total, file = paste("PLOTS/ENSEMBLE/WIS_", strata,"_ensemble.RDS", sep = ""))
+p_total <- wis_bar + wis_line_horizon + coverage_bar + plot_annotation(title = tmp_ttl, theme = theme(plot.margin = margin(), text = element_text(size = 14, family = "LM Roman 10")))
+saveRDS(object = p_total, file = paste("PLOTS/ENSEMBLE/STRATIFIED/WIS_", strata,"_ensemble.RDS", sep = ""))
 
-ggsave(filename = paste("PLOTS/ENSEMBLE/WIS_", strata,"_ensemble.jpeg", sep = ""), plot = p_total, width = 3500, height = 1400, units = c("px"), dpi = 300, bg = "white") 
-
-
-
-
+ggsave(filename = paste("PLOTS/ENSEMBLE/STRATIFIED/WIS_", strata,"_ensemble.jpeg", sep = ""), plot = p_total, width = 4600, height = 1500, units = c("px"), dpi = 300, bg = "white") 
 
 
 

@@ -65,7 +65,7 @@ post_select_mod <- "KIT"
 
 method <- "Mean" # c("Mean", "Median", "all_quant") # How to summarize the recent past
 
-strata <- "states" # c("states", "ages", "all")
+strata <- "all" # c("states", "ages", "all")
 
 if (strata == "states") {
   state_idx <- 1:16
@@ -355,25 +355,26 @@ if (exploratory_wis) {
   
   # Bar plot
   reference_pts <- df_wis %>% group_by(model) %>% mutate(total = sum(wis)) %>% ungroup() %>% select(total) %>% c() %>% unlist() %>% unname() %>% unique() %>% round(2)
-  reference_pts_c50 <- coverage_models$coverage_50 %>% unlist() %>% round(2) %>% unname()
-  reference_pts_c95 <- coverage_models$coverage_95 %>% unlist() %>% round(2) %>% unname()
+  reference_pts_50 <- coverage_models$coverage_50 %>% unlist() %>% round(3) %>% unname()
+  reference_pts_95 <- coverage_models$coverage_95 %>% unlist() %>% round(3) %>% unname()
   if (strata == "all") {
     # reference_pts <- c(182.23, 175.92, 125.06, 135.40, 93.67, 137.85, 143.98, 209.49, 81.95, 80.76)
-    # reference_pts_c50 <- c(0.17, 0.19, 0.71, 0.09, 0.20, 0.24, 0.27, 0.18, 0.42, 0.37)
-    # reference_pts_c95 <- c(0.49, 0.66, 1.00, 0.27, 0.53, 0.55, 0.65, 0.41, 0.90, 0.75)
+    # reference_pts_50 <- c(0.17, 0.19, 0.71, 0.09, 0.20, 0.24, 0.27, 0.18, 0.42, 0.37)
+    # reference_pts_95 <- c(0.49, 0.66, 1.00, 0.27, 0.53, 0.55, 0.65, 0.41, 0.90, 0.75)
     wis_bar <- plot_wis_bar(df_wis = df_wis, wis_summ = wis_summ, models = tmp_models, colors = tmp_colors, ylim_manual = 220, skip_space = FALSE)
     coverage_bar <- plot_coverage(coverage_models = coverage_models, models = tmp_models, colors = tmp_colors)
   } else {
     # Ages
     # reference_pts <- c(28.56, 31.77, 22.99, 30.98, 20.60, 23.59, 39.53, 16.28, 16.69)
-    # reference_pts_c50 <- c()
-    # reference_pts_c95 <- c()
+    # reference_pts_50 <- c(0.327, 0.333, 0.646, 0.145, 0.232, 0.337, 0.192)
+    # reference_pts_95 <- c(0.756, 0.760, 0.987, 0.410, 0.623, 0.764, 0.450)
     # States 
     # reference_pts <- c(14.99, 12.84, 15.26, 13.89, 17.02, 13.83, 20.37, 10.97, 11.19)
-    # reference_pts_c50 <- c()
-    # reference_pts_c95 <- c()
+    # reference_pts_50 <- c(0.378, 0.575, 0.301, 0.309, 0.156, 0.368, 0.197)
+    # reference_pts_95 <- c(0.781, 0.956, 0.658, 0.662, 0.316, 0.776, 0.456)
     if (strata == "states") { ylim_manual <- 25 } else if (strata == "ages") { ylim_manual <- 40 }
-    wis_bar <- plot_wis_bar_stratified(df_wis = df_wis, wis_summ = wis_summ, models = models, colors = colors, ylim_manual = ylim_manual, skip_space = TRUE)
+    wis_bar <- plot_wis_bar_stratified_simplified(df_wis = df_wis, wis_summ = wis_summ, models = tmp_models, colors = tmp_colors, ylim_manual = ylim_manual, skip_space = FALSE)
+    coverage_bar <- plot_coverage_stratified(coverage_models = coverage_models, models = tmp_models, colors = tmp_colors)
   }
 
   # Line plot over the horizons
@@ -402,7 +403,7 @@ if (exploratory_wis) {
     p_total3 <-   wrap_elements(c_all    + plot_annotation(theme = theme(plot.margin = margin(-15, 0, -5, 0)))) /
                   wrap_elements(c_states + plot_annotation(theme = theme(plot.margin = margin(-15, 0, -5, 0)))) /
                   wrap_elements(c_ages   + plot_annotation(theme = theme(plot.margin = margin(-15, 0, -5, 0))))
-    ggsave(filename = "PLOTS/WIS_3.jpeg", plot = p_total3, width = 3500, height = 4600, units = c("px"), dpi = 300, bg = "white") 
+    ggsave(filename = "PLOTS/WIS_3.jpeg", plot = p_total3, width = 4500, height = 4600, units = c("px"), dpi = 300, bg = "white") 
   }
 }
 
