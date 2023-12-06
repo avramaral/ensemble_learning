@@ -540,7 +540,7 @@ plot_postprocessed_models <- function (data, nowcasts, truth_data, model, r, tra
     scale_color_manual(NULL, values = cmb_colors) +
     expand_limits(y = c(0, max_y)) +
     xlim(c(r_1, r_2)) +
-    labs(x = "Forecast date", y = y_lab_temp) +
+    labs(x = "", y = y_lab_temp) +
     theme_bw() +
     theme(legend.position = "none", 
           legend.title = element_text(size = 11),
@@ -625,6 +625,47 @@ plotting_quantile_weights <- function (w_hat, r, models, colors, uncertain_size 
   pp
 }
 
+
+plotting_quantile_weights_v2 <- function (w_hat, r, models, colors, uncertain_size = 40, extra_skip = 0, y_max = NULL, sub_tt = "", ...) {
+  names(colors) <- models
+  
+  alphas <- c(1, 2)
+  w_hat <- w_hat |> add_column(aa = factor(ifelse(w_hat$forecast_date <= (r[1] + 40), alphas[1], alphas[2])))
+  if (length(unique(w_hat$aa)) == 1) { af <- 1 } else { af <- c(0.25, 1) }
+  w_hat$quant <- factor(w_hat$quant)
+  
+  pp <- ggplot(w_hat, aes(fill = as.factor(model), x = forecast_date)) +
+    facet_wrap("quant", scales = "fixed", ncol = 3) +
+    geom_bar(aes(y = value, alpha = aa), position = "stack", stat = "identity") + # c(fill, stack)
+    geom_vline(xintercept = as.numeric(r[1] + (uncertain_size + 1)) - 0.5, linetype = "dashed") + 
+    geom_vline(xintercept = as.numeric(r[1] + (uncertain_size + 1)  + extra_skip) - 0.5, linetype = "dashed") + 
+    scale_fill_manual("Models ", values = colors) +
+    scale_alpha_manual(values = af, guide = "none") +
+    scale_x_date(limit = c((r[1] + 1), max(w_hat$forecast_date) + 1)) + 
+    labs(x = "", y = paste("Weights", sub_tt, sep = "")) + 
+    theme_bw() +
+    theme(plot.title = element_text(size = 16, hjust = 0.5, face = "bold"),
+          legend.position = "bottom",
+          legend.title = element_text(size = 16),
+          legend.text = element_text(size = 16),
+          strip.text = element_text(size = 16, margin = margin(b = 2, t = 2)),
+          axis.title.y = element_text(size = 16),
+          axis.text = element_text(size = 16),
+          axis.ticks = element_line(colour = "black", linewidth = 0.25),
+          panel.grid.major = element_line(linewidth = 0.15),
+          panel.grid.minor = element_line(linewidth = 0.1),
+          plot.margin = unit(c(1, 1.5, 0, 1.5), "pt"),
+          legend.margin = margin(0, 0.5, 0, 5),
+          legend.box.spacing = unit(0, "pt"),
+          legend.background = element_rect(fill = "transparent"),
+          text = element_text(size = 16, family = "LM Roman 10")) +
+    { if (!is.null(y_max)) scale_y_continuous(breaks = seq(0, y_max, length.out = 6), limits = c(0, y_max)) } +
+    { if ( is.null(y_max)) scale_y_continuous() } +
+    guides(fill = guide_legend(nrow = 2))
+  
+  pp
+}
+
 ##################################################
 ##################################################
 ##################################################
@@ -666,6 +707,54 @@ plotting_horizon_weights <- function (w_hat, r, models, colors, uncertain_size =
           text = element_text(size = 16, family = "LM Roman 10")) +
     { if (!is.null(y_max)) scale_y_continuous(breaks = seq(0, y_max, length.out = 6), limits = c(0, y_max)) } +
     { if ( is.null(y_max)) scale_y_continuous() } 
+  
+  pp
+}
+
+plotting_horizon_weights_v2 <- function (w_hat, r, models, colors, uncertain_size = 40, hhs = c(-28, -24, -20, -16, -12, -8, -4, 0), big_title = "", extra_skip = 0, y_max = NULL, all_same = FALSE, ...) {
+  names(colors) <- models
+  
+  alphas <- c(1, 2)
+  w_hat <- w_hat |> add_column(aa = factor(ifelse(w_hat$forecast_date <= (r[1] + 40), alphas[1], alphas[2])))
+  if (length(unique(w_hat$aa)) == 1) { af <- 1 } else { af <- c(0.25, 1) }
+  
+  w_hat <- w_hat |> filter(horizon %in% hhs)
+  w_hat$horizon <- factor(x = w_hat$horizon, levels = hhs)
+  
+  if (all_same) {
+    w_hat <- w_hat[w_hat$horizon == hhs[1],]
+    leg_pos <- "right"
+  } else {
+    leg_pos <- "bottom"
+  }
+
+  pp <- ggplot(w_hat, aes(fill = as.factor(model), x = forecast_date)) +
+    { if (!all_same) facet_wrap("horizon", scales = "fixed", ncol = 3) } +
+    geom_bar(aes(y = value, alpha = aa), position = "stack", stat = "identity") +
+    geom_vline(xintercept = as.numeric(r[1] + (uncertain_size + 1)) - 0.5, linetype = "dashed") + 
+    geom_vline(xintercept = as.numeric(r[1] + (uncertain_size + 1)  + extra_skip) - 0.5, linetype = "dashed") + 
+    scale_fill_manual("Models", values = colors) +
+    scale_alpha_manual(values = af, guide = "none") +
+    scale_x_date(limit = c((r[1] + 1), max(w_hat$forecast_date) + 1)) + 
+    labs(x = "", y = "Weights (Averaged over quantiles)", title = big_title) + 
+    theme_bw() +
+    theme(plot.title = element_text(size = 16, hjust = 0.5, face = "bold"),
+          legend.position = leg_pos,
+          legend.title = element_text(size = 16),
+          legend.text = element_text(size = 16),
+          strip.text = element_text(size = 16, margin = margin(b = 2, t = 2)),
+          axis.title.y = element_text(size = 16),
+          axis.text = element_text(size = 16),
+          axis.ticks = element_line(colour = "black", linewidth = 0.25),
+          panel.grid.major = element_line(linewidth = 0.15),
+          panel.grid.minor = element_line(linewidth = 0.1),
+          plot.margin = unit(c(1, 1.5, 0, 1.5), "pt"),
+          legend.margin = margin(0, 0, 0, 5),
+          legend.box.spacing = unit(0, "pt"),
+          legend.background = element_rect(fill = "transparent"),
+          text = element_text(size = 16, family = "LM Roman 10")) +
+    { if (!is.null(y_max)) scale_y_continuous(breaks = seq(0, y_max, length.out = 6), limits = c(0, y_max)) } +
+    { if ( is.null(y_max)) scale_y_continuous() }
   
   pp
 }

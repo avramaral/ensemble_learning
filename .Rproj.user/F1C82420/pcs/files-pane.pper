@@ -2,7 +2,7 @@
     "sortOrder": [
         {
             "columnIndex": 2,
-            "ascending": false
+            "ascending": true
         },
         {
             "columnIndex": 4,
@@ -13,5 +13,5 @@
             "ascending": true
         }
     ],
-    "path": "~/Desktop/ensemble_learning"
+    "path": "~/Desktop/ensemble_learning/RESULTS/FITTED_OBJECTS/POST_PROCESSED/PLOTS"
 }

@@ -163,7 +163,7 @@ if (strata == "all") { tmp_models <- models[1:8]; tmp_colors <- colors[1:8] } el
 # Must set `hh` to the horizon for the left-most plot
 ##################################################
 
-hh <- 0 # Horizon for the left-most plot
+hh <- -14 # 0 # Horizon for the left-most plot
 extra_skip <- 30
 
 average <- FALSE # Should daily WIS be aggregated in a MV?
@@ -194,3 +194,8 @@ tmp_ttl <- paste("Post-processed unweighted ensemble (", ifelse(horiz, "varying 
 for (m in 1:length(tmp_models)) {
   ggsave(filename = paste("PLOTS/POSTPROCESS/post_", tmp_char, models[m], "_skip_", skip_recent_days, "_horiz_", horiz, "_method_", method, ".jpeg", sep = ""), plot = postprocessed_plots[[m]]$p_total, width = 3500, height = 1400, units = c("px"), dpi = 300, bg = "white")
 }
+
+
+
+#p_total_tmp <- xxx[[4]]$p_total / postprocessed_plots[[8]]$p_total ## 0 and (-14) days, respectively (LMU and SZ)
+#ggsave(filename = paste("PLOTS/POSTPROCESS/post_", tmp_char, "_skip_", skip_recent_days, "_horiz_", horiz, "_method_", method, "_0_-14.jpeg", sep = ""), plot = p_total_tmp, width = 3500, height = 2800, units = c("px"), dpi = 300, bg = "white")

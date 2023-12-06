@@ -299,7 +299,7 @@ if (FALSE) {
   # Per quantile: `aggregate_total = FALSE` and `indep_quant = TRUE`
   # Per horizon: `aggregate_total = FALSE` and `indep_quant = FALSE`
   
-  aggregate_total <- TRUE
+  aggregate_total <- FALSE
   indep_quant <- TRUE
   
   formatted_w_hat_file <- paste("RESULTS/w_hat_per_horizon_size_", training_size, "_state_", state, "_age_", age, "_quant_", as.character(quant), "_horiz_", as.character(horiz), ".RDS", sep = "")
@@ -345,6 +345,8 @@ if (FALSE) {
     }
   }
   
+  
+  v2 <- TRUE
   # Plotting
   extra_skip <- 30
   if (aggregate_total) { # Aggregated
@@ -358,33 +360,52 @@ if (FALSE) {
     plot_A4 <- plotting_summarized_weights(w_hat = formatted_w_hat_AISW_4$new_w_hat, r = rr, models = models_orig, colors = colors_orig, extra_skip = extra_skip, y_max = 1.25)
   } else {
     if (indep_quant) { # Per quantile
-      plot_D1 <- plotting_quantile_weights(w_hat = formatted_w_hat_DISW_1$new_w_hat_total, r = rr, models = models_orig, colors = colors_orig, extra_skip = extra_skip)
-      plot_D2 <- plotting_quantile_weights(w_hat = formatted_w_hat_DISW_2$new_w_hat_total, r = rr, models = models_orig, colors = colors_orig, extra_skip = extra_skip)
-      plot_D3 <- plotting_quantile_weights(w_hat = formatted_w_hat_DISW_3$new_w_hat_total, r = rr, models = models_orig, colors = colors_orig, extra_skip = extra_skip)
-      plot_D4 <- plotting_quantile_weights(w_hat = formatted_w_hat_DISW_4$new_w_hat_total, r = rr, models = models_orig, colors = colors_orig, extra_skip = extra_skip)
-      plot_A1 <- plotting_quantile_weights(w_hat = formatted_w_hat_AISW_1$new_w_hat_total, r = rr, models = models_orig, colors = colors_orig, extra_skip = extra_skip, y_max = 1.25)
-      plot_A2 <- plotting_quantile_weights(w_hat = formatted_w_hat_AISW_2$new_w_hat_total, r = rr, models = models_orig, colors = colors_orig, extra_skip = extra_skip, y_max = 1.25)
-      plot_A3 <- plotting_quantile_weights(w_hat = formatted_w_hat_AISW_3$new_w_hat_total, r = rr, models = models_orig, colors = colors_orig, extra_skip = extra_skip, y_max = 1.25)
-      plot_A4 <- plotting_quantile_weights(w_hat = formatted_w_hat_AISW_4$new_w_hat_total, r = rr, models = models_orig, colors = colors_orig, extra_skip = extra_skip, y_max = 1.25)
+      plot_D1 <- plotting_quantile_weights_v2(w_hat = formatted_w_hat_DISW_1$new_w_hat_total, r = rr, models = models_orig, colors = colors_orig, extra_skip = extra_skip, sub_tt = "") 
+      plot_D2 <- plotting_quantile_weights_v2(w_hat = formatted_w_hat_DISW_2$new_w_hat_total, r = rr, models = models_orig, colors = colors_orig, extra_skip = extra_skip, sub_tt = "") 
+      plot_D3 <- plotting_quantile_weights_v2(w_hat = formatted_w_hat_DISW_3$new_w_hat_total, r = rr, models = models_orig, colors = colors_orig, extra_skip = extra_skip, sub_tt = "") 
+      plot_D4 <- plotting_quantile_weights_v2(w_hat = formatted_w_hat_DISW_4$new_w_hat_total, r = rr, models = models_orig, colors = colors_orig, extra_skip = extra_skip, sub_tt = " (Averaged over horizons)") 
+      plot_A1 <- plotting_quantile_weights_v2(w_hat = formatted_w_hat_AISW_1$new_w_hat_total, r = rr, models = models_orig, colors = colors_orig, extra_skip = extra_skip, y_max = 1.25, sub_tt = "") 
+      plot_A2 <- plotting_quantile_weights_v2(w_hat = formatted_w_hat_AISW_2$new_w_hat_total, r = rr, models = models_orig, colors = colors_orig, extra_skip = extra_skip, y_max = 1.25, sub_tt = "") 
+      plot_A3 <- plotting_quantile_weights_v2(w_hat = formatted_w_hat_AISW_3$new_w_hat_total, r = rr, models = models_orig, colors = colors_orig, extra_skip = extra_skip, y_max = 1.25, sub_tt = "") 
+      plot_A4 <- plotting_quantile_weights_v2(w_hat = formatted_w_hat_AISW_4$new_w_hat_total, r = rr, models = models_orig, colors = colors_orig, extra_skip = extra_skip, y_max = 1.25, sub_tt = " (Averaged over horizons)") 
     } else { # Per horizon
-      plot_D1 <- plotting_horizon_weights(w_hat = formatted_w_hat_DISW_1$new_w_hat_total, r = rr, models = models_orig, colors = colors_orig, big_title = "", extra_skip = extra_skip)
-      plot_D2 <- plotting_horizon_weights(w_hat = formatted_w_hat_DISW_2$new_w_hat_total, r = rr, models = models_orig, colors = colors_orig, big_title = "", extra_skip = extra_skip)
-      plot_D3 <- plotting_horizon_weights(w_hat = formatted_w_hat_DISW_3$new_w_hat_total, r = rr, models = models_orig, colors = colors_orig, big_title = "", extra_skip = extra_skip)
-      plot_D4 <- plotting_horizon_weights(w_hat = formatted_w_hat_DISW_4$new_w_hat_total, r = rr, models = models_orig, colors = colors_orig, big_title = "", extra_skip = extra_skip)
-      plot_A1 <- plotting_horizon_weights(w_hat = formatted_w_hat_AISW_1$new_w_hat_total, r = rr, models = models_orig, colors = colors_orig, big_title = "", extra_skip = extra_skip, y_max = 1.25)
-      plot_A2 <- plotting_horizon_weights(w_hat = formatted_w_hat_AISW_2$new_w_hat_total, r = rr, models = models_orig, colors = colors_orig, big_title = "", extra_skip = extra_skip, y_max = 1.25)
-      plot_A3 <- plotting_horizon_weights(w_hat = formatted_w_hat_AISW_3$new_w_hat_total, r = rr, models = models_orig, colors = colors_orig, big_title = "", extra_skip = extra_skip, y_max = 1.25)
-      plot_A4 <- plotting_horizon_weights(w_hat = formatted_w_hat_AISW_4$new_w_hat_total, r = rr, models = models_orig, colors = colors_orig, big_title = "", extra_skip = extra_skip, y_max = 1.25)
+      plot_D1 <- plotting_horizon_weights_v2(w_hat = formatted_w_hat_DISW_1$new_w_hat_total, r = rr, models = models_orig, colors = colors_orig, big_title = "", extra_skip = extra_skip, all_same = TRUE)
+      plot_D2 <- plotting_horizon_weights_v2(w_hat = formatted_w_hat_DISW_2$new_w_hat_total, r = rr, models = models_orig, colors = colors_orig, big_title = "", extra_skip = extra_skip, all_same = TRUE)
+      plot_D3 <- plotting_horizon_weights_v2(w_hat = formatted_w_hat_DISW_3$new_w_hat_total, r = rr, models = models_orig, colors = colors_orig, big_title = "", extra_skip = extra_skip, all_same = TRUE)
+      plot_D4 <- plotting_horizon_weights_v2(w_hat = formatted_w_hat_DISW_4$new_w_hat_total, r = rr, models = models_orig, colors = colors_orig, big_title = "", extra_skip = extra_skip, all_same = FALSE)
+      plot_A1 <- plotting_horizon_weights_v2(w_hat = formatted_w_hat_AISW_1$new_w_hat_total, r = rr, models = models_orig, colors = colors_orig, big_title = "", extra_skip = extra_skip, y_max = 1.25, all_same = TRUE)
+      plot_A2 <- plotting_horizon_weights_v2(w_hat = formatted_w_hat_AISW_2$new_w_hat_total, r = rr, models = models_orig, colors = colors_orig, big_title = "", extra_skip = extra_skip, y_max = 1.25, all_same = TRUE)
+      plot_A3 <- plotting_horizon_weights_v2(w_hat = formatted_w_hat_AISW_3$new_w_hat_total, r = rr, models = models_orig, colors = colors_orig, big_title = "", extra_skip = extra_skip, y_max = 1.25, all_same = TRUE)
+      plot_A4 <- plotting_horizon_weights_v2(w_hat = formatted_w_hat_AISW_4$new_w_hat_total, r = rr, models = models_orig, colors = colors_orig, big_title = "", extra_skip = extra_skip, y_max = 1.25, all_same = FALSE)
     }
   }
+
+  dim_f <- function (all_same, ...) {
+    if (v2 == TRUE) { wi <- 4600; he <- 1375 } else { wi <- 3500; he <- 2500 }
+    
+    if (!aggregate_total & !indep_quant) {
+      if (v2 == TRUE) { 
+        if (all_same) {
+          wi <- 2080 # 1533
+          he <- 1250
+        } else {
+          wi <- 4600; he <- 3500
+        }
+      } else { stop("To be defined.") }
+    }
+    c(wi, he)
+  }
+
+  dim_same <- dim_f(all_same = TRUE )
+  dim_vary <- dim_f(all_same = FALSE)
   
-  ggsave(filename = paste("PLOTS/weights_D1.jpeg", sep = ""), plot = plot_D1, width = 3500, height = 2500, units = c("px"), dpi = 300, bg = "white") 
-  ggsave(filename = paste("PLOTS/weights_D2.jpeg", sep = ""), plot = plot_D2, width = 3500, height = 2500, units = c("px"), dpi = 300, bg = "white") 
-  ggsave(filename = paste("PLOTS/weights_D3.jpeg", sep = ""), plot = plot_D3, width = 3500, height = 2500, units = c("px"), dpi = 300, bg = "white") 
-  ggsave(filename = paste("PLOTS/weights_D4.jpeg", sep = ""), plot = plot_D4, width = 3500, height = 2500, units = c("px"), dpi = 300, bg = "white") 
-  ggsave(filename = paste("PLOTS/weights_A1.jpeg", sep = ""), plot = plot_A1, width = 3500, height = 2500, units = c("px"), dpi = 300, bg = "white") 
-  ggsave(filename = paste("PLOTS/weights_A2.jpeg", sep = ""), plot = plot_A2, width = 3500, height = 2500, units = c("px"), dpi = 300, bg = "white") 
-  ggsave(filename = paste("PLOTS/weights_A3.jpeg", sep = ""), plot = plot_A3, width = 3500, height = 2500, units = c("px"), dpi = 300, bg = "white") 
-  ggsave(filename = paste("PLOTS/weights_A4.jpeg", sep = ""), plot = plot_A4, width = 3500, height = 2500, units = c("px"), dpi = 300, bg = "white") 
+  ggsave(filename = paste("PLOTS/weights_D1.jpeg", sep = ""), plot = plot_D1, width = dim_same[1], height = dim_same[2], units = c("px"), dpi = 300, bg = "white")
+  ggsave(filename = paste("PLOTS/weights_D2.jpeg", sep = ""), plot = plot_D2, width = dim_same[1], height = dim_same[2], units = c("px"), dpi = 300, bg = "white")
+  ggsave(filename = paste("PLOTS/weights_D3.jpeg", sep = ""), plot = plot_D3, width = dim_same[1], height = dim_same[2], units = c("px"), dpi = 300, bg = "white")
+  ggsave(filename = paste("PLOTS/weights_D4.jpeg", sep = ""), plot = plot_D4, width = dim_vary[1], height = dim_vary[2], units = c("px"), dpi = 300, bg = "white")
+  ggsave(filename = paste("PLOTS/weights_A1.jpeg", sep = ""), plot = plot_A1, width = dim_same[1], height = dim_same[2], units = c("px"), dpi = 300, bg = "white")
+  ggsave(filename = paste("PLOTS/weights_A2.jpeg", sep = ""), plot = plot_A2, width = dim_same[1], height = dim_same[2], units = c("px"), dpi = 300, bg = "white")
+  ggsave(filename = paste("PLOTS/weights_A3.jpeg", sep = ""), plot = plot_A3, width = dim_same[1], height = dim_same[2], units = c("px"), dpi = 300, bg = "white")
+  ggsave(filename = paste("PLOTS/weights_A4.jpeg", sep = ""), plot = plot_A4, width = dim_vary[1], height = dim_vary[2], units = c("px"), dpi = 300, bg = "white")
   
 }
