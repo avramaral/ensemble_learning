@@ -148,11 +148,13 @@ plot_wis_bar_stratified <- function (df_wis, wis_summ, models, colors, ylim_manu
 
 plot_wis_bar_stratified_simplified <- function (df_wis, wis_summ, models, colors, ylim_manual = 200, reference_pts = NULL, ...) {
   
-  if (idx_missing_model == 2) { models <- c(models[1], "ILM",     models[2:7]) } else if (idx_missing_model == 6) { models <- c(models[1:5], "RKI",     models[6:7])  }
-  if (idx_missing_model == 2) { colors <- c(colors[1], "#E69F00", colors[2:7]) } else if (idx_missing_model == 6) { colors <- c(colors[1:5], "#3C4AAD", colors[6:7])  }
+  nm <- length(models)
+  
+  if (idx_missing_model == 2) { models <- c(models[1], "ILM",     models[2:nm]) } else if (idx_missing_model == 6) { models <- c(models[1:5], "RKI",     models[6:nm])  }
+  if (idx_missing_model == 2) { colors <- c(colors[1], "#E69F00", colors[2:nm]) } else if (idx_missing_model == 6) { colors <- c(colors[1:5], "#3C4AAD", colors[6:nm])  }
   
   if (!is.null(reference_pts)) {
-    reference_pts <- data.frame(model = models, value = c(reference_pts[1:(idx_missing_model - 1)], NA, reference_pts[(idx_missing_model):7]))
+    reference_pts <- data.frame(model = models, value = c(reference_pts[1:(idx_missing_model - 1)], NA, reference_pts[(idx_missing_model):nm]))
     reference_pts$model <- factor(x = reference_pts$model, levels = models, labels = models)
   }
   
@@ -161,7 +163,7 @@ plot_wis_bar_stratified_simplified <- function (df_wis, wis_summ, models, colors
   df_wis_total$model <- models
   df_wis_total$model <- factor(x = df_wis_total$model, levels = models)
   tmp_wis <- Reduce(`+`, wis_summ) / length(wis_summ)
-  tmp_wis <- c(tmp_wis[1:(idx_missing_model - 1)], NA, tmp_wis[idx_missing_model:7])
+  tmp_wis <- c(tmp_wis[1:(idx_missing_model - 1)], NA, tmp_wis[idx_missing_model:nm])
   df_wis_total$wis <- tmp_wis
   
   colors_ordered <- colors
@@ -398,7 +400,7 @@ plot_wis_line_horizon <- function (df_wis_horizon, models, colors, quant = FALSE
 ##################################################
 ##################################################
 
-plot_postprocessed_models <- function (data, nowcasts, truth_data, model, r, training_size, uncertain_size, hh = 0, ens_method = "wis", horizon = -28:0, probs = c(0.025, 0.100, 0.250, 0.500, 0.750, 0.900, 0.975), extra_skip = 0, skip_recent_days = FALSE, average = FALSE, ...) {
+plot_postprocessed_models <- function (data, nowcasts, truth_data, model, r, training_size, uncertain_size, baseline_tmp, hh = 0, ens_method = "wis", horizon = -28:0, probs = c(0.025, 0.100, 0.250, 0.500, 0.750, 0.900, 0.975), extra_skip = 0, skip_recent_days = FALSE, average = FALSE, ...) {
   
   name_method <- ifelse(ens_method == "wis", "DISW", "ISW")
   
@@ -418,13 +420,16 @@ plot_postprocessed_models <- function (data, nowcasts, truth_data, model, r, tra
   }
   df_nowcast <- df_nowcast |> pivot_wider(names_from = quantile, values_from = value)
   
+  x_dates <- as.Date(c("2021-11-15", "2022-04-29"))
+  
   alphas <- setNames(c(0.75, 0.4), c("50%", "95%"))
-  line_colors <- setNames(c("red", "gray"), c("Final", "At time of nowcast"))
+  line_colors <- setNames(c("red", "lightgray"), c("Final", "At time\nof nowcast"))
   p1 <- ggplot(df_nowcast) +
     geom_ribbon(aes(x = date, ymin = `0.025`, ymax = `0.975`, alpha = "95%"), fill = "skyblue3") +
     geom_ribbon(aes(x = date, ymin = `0.25` , ymax = `0.75`, alpha = "50%"),  fill = "skyblue3") +
     geom_line(aes(x = date, y = `0.5`), linetype = "solid", linewidth = 0.5, color = "royalblue4") + 
     geom_line(aes(x = date, y = `0`, color = "Final"),  linetype = "solid", linewidth = 0.5)  + 
+    geom_line(data = baseline_tmp, aes(x = target_end_date, y = value, color = "At time\nof nowcast"),  linetype = "solid", linewidth = 0.5)  + 
     labs(x = NULL, y = "COVID-19 7-day hospitalization incidence in Germany", title = paste("Horizon: ", hh, " days (Post-processed ", model, ")", sep = "")) +
     scale_alpha_manual(
       name = "Nowcasts with \nprediction intervals", values = alphas,
@@ -435,6 +440,7 @@ plot_postprocessed_models <- function (data, nowcasts, truth_data, model, r, tra
       guide = guide_legend(order = 1, title.position = "top", title.hjust = 0)
     ) +
     scale_y_continuous(breaks = c(5000, 10000, 15000), limits = c(2500, 17500)) +
+    xlim(x_dates) + 
     theme_bw() +
     theme(
       plot.title = element_text(size = 10, hjust = 0.5, face = "bold"),
@@ -570,6 +576,7 @@ plotting_summarized_weights <- function (w_hat, r, models, colors, uncertain_siz
     geom_bar(aes(y = value, alpha = aa), position = "stack", stat = "identity") +
     geom_vline(xintercept = as.numeric(r[1] + (uncertain_size + 1)) - 0.5, linetype = "dashed") + 
     geom_vline(xintercept = as.numeric(r[1] + (uncertain_size + 1)  + extra_skip) - 0.5, linetype = "dashed") + 
+    { if (!is.null(y_max)) geom_hline(yintercept = 1, linetype = "dashed")  } +
     scale_fill_manual("Models", values = colors) +
     scale_alpha_manual(values = rr, guide = "none") +
     scale_x_date(limit = c((r[1] + 1), max(w_hat$forecast_date))) + 
@@ -639,6 +646,7 @@ plotting_quantile_weights_v2 <- function (w_hat, r, models, colors, uncertain_si
     geom_bar(aes(y = value, alpha = aa), position = "stack", stat = "identity") + # c(fill, stack)
     geom_vline(xintercept = as.numeric(r[1] + (uncertain_size + 1)) - 0.5, linetype = "dashed") + 
     geom_vline(xintercept = as.numeric(r[1] + (uncertain_size + 1)  + extra_skip) - 0.5, linetype = "dashed") + 
+    { if (!is.null(y_max)) geom_hline(yintercept = 1, linetype = "dashed")  } +
     scale_fill_manual("Models ", values = colors) +
     scale_alpha_manual(values = af, guide = "none") +
     scale_x_date(limit = c((r[1] + 1), max(w_hat$forecast_date) + 1)) + 
@@ -733,6 +741,7 @@ plotting_horizon_weights_v2 <- function (w_hat, r, models, colors, uncertain_siz
     geom_bar(aes(y = value, alpha = aa), position = "stack", stat = "identity") +
     geom_vline(xintercept = as.numeric(r[1] + (uncertain_size + 1)) - 0.5, linetype = "dashed") + 
     geom_vline(xintercept = as.numeric(r[1] + (uncertain_size + 1)  + extra_skip) - 0.5, linetype = "dashed") + 
+    { if (!is.null(y_max)) geom_hline(yintercept = 1, linetype = "dashed") } +
     scale_fill_manual("Models", values = colors) +
     scale_alpha_manual(values = af, guide = "none") +
     scale_x_date(limit = c((r[1] + 1), max(w_hat$forecast_date) + 1)) + 
@@ -818,13 +827,15 @@ plot_coverage <- function (coverage_models, models, colors, reference_pts_50 = N
 
 plot_coverage_stratified <- function (coverage_models, models, colors, reference_pts_50 = NULL, reference_pts_95 = NULL, ...) {
   
-  if (idx_missing_model == 2) { models <- c(models[1], "ILM",     models[2:7]) } else if (idx_missing_model == 6) { models <- c(models[1:5], "RKI",     models[6:7])  }
-  if (idx_missing_model == 2) { colors <- c(colors[1], "#E69F00", colors[2:7]) } else if (idx_missing_model == 6) { colors <- c(colors[1:5], "#3C4AAD", colors[6:7])  }
+  nm <- length(models)
+  
+  if (idx_missing_model == 2) { models <- c(models[1], "ILM",     models[2:nm]) } else if (idx_missing_model == 6) { models <- c(models[1:5], "RKI",     models[6:nm])  }
+  if (idx_missing_model == 2) { colors <- c(colors[1], "#E69F00", colors[2:nm]) } else if (idx_missing_model == 6) { colors <- c(colors[1:5], "#3C4AAD", colors[6:nm])  }
 
   
   if (!is.null(reference_pts_50) & !is.null(reference_pts_95)) {
-    reference_pts_50 <- c(reference_pts_50[1:(idx_missing_model - 1)], NA, reference_pts_50[idx_missing_model:7])
-    reference_pts_95 <- c(reference_pts_95[1:(idx_missing_model - 1)], NA, reference_pts_95[idx_missing_model:7])
+    reference_pts_50 <- c(reference_pts_50[1:(idx_missing_model - 1)], NA, reference_pts_50[idx_missing_model:nm])
+    reference_pts_95 <- c(reference_pts_95[1:(idx_missing_model - 1)], NA, reference_pts_95[idx_missing_model:nm])
     
     reference_pts <- data.frame(model = models, c50 = reference_pts_50, c95 = reference_pts_95)
     reference_pts$model <- factor(x = models, levels = models, labels = models)

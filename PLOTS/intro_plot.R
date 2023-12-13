@@ -2,7 +2,7 @@ suppressMessages(library("tidyverse"))
 suppressMessages(library("patchwork"))
 DATES <- c("2022-02-01", "2022-03-01", "2022-04-01")
 
-models <- c("Epiforecasts", "ILM", "KIT", "LMU", "RIVM", "RKI", "SU", "SZ", "Mean", "Median") 
+models <- c("Epiforecasts", "ILM", "KIT", "LMU", "RIVM", "RKI", "SU", "SZ", "Mean ensemble", "Median ensemble") 
 colors <- c("#B30000", "#E69F00", "#56B4E9", "#F0E442", "#80471C", "#3C4AAD", "#CC79A7", "#000000", "#009E73", "#60D1B3")
 
 data_demo <- readRDS(file = "DATA/data_demo.RDS")
@@ -18,7 +18,7 @@ r <- range(df_unrevised$date)
 truth_data <- read_csv(file = "DATA/truth_40d.csv.gz")
 truth_data <- truth_data |> filter(location == "DE", age_group == "00+", date >= r[1], date <= r[2]) 
 
-plot_data <- function (i, m, cc = c("#000000", "red", "#0000FFBB"), ...) {
+plot_data <- function (i, m, cc = c("#000000", "red", "lightgrey"), ...) {
   pos_model <- which(m == models)
   
   ALPHAS <- setNames(c(0.75, 0.4), c("50%", "95%"))
@@ -56,9 +56,11 @@ plot_data <- function (i, m, cc = c("#000000", "red", "#0000FFBB"), ...) {
 
 ll <- ggplot() + geom_text(aes(1, 1, label = "7-day hospitalization incidence"), angle = 90, family = "LM Roman 10", size = 6) + theme_void()
 
+
+
 p_1 <- plot_data(i = 1, m = "KIT")
 p_2 <- plot_data(i = 2, m = "LMU")
-p_3 <- plot_data(i = 3, m = "Median")
+p_3 <- plot_data(i = 3, m = "Mean ensemble")
 
 p_total <- ll + p_1 + p_2 + p_3 + plot_layout(widths = c(1, 20, 20, 20))
 ggsave(filename = paste("PLOTS/initial_plot.jpeg", sep = ""), plot = p_total, width = 4600, height = 1620, units = c("px"), dpi = 300, bg = "white") 

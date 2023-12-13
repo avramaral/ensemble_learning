@@ -247,8 +247,8 @@ if (FALSE) { # Plot all strata
               wrap_elements(c_states + plot_annotation(theme = theme(plot.margin = margin(-15, 0, -5, 0)))) /
               wrap_elements(c_ages   + plot_annotation(theme = theme(plot.margin = margin(-15, 0, -5, 0)))) + plot_layout(heights = c(1.5, 1, 1))
   
-  ggsave(filename = "PLOTS/ENSEMBLE/WIS_ensemble_2.jpeg", plot = p_total2, width = 4500, height = 3066, units = c("px"), dpi = 300, bg = "white")
-  ggsave(filename = "PLOTS/ENSEMBLE/WIS_ensemble_3.jpeg", plot = p_total3, width = 4500, height = 5366, units = c("px"), dpi = 300, bg = "white") 
+  ggsave(filename = "PLOTS/ENSEMBLE/WIS_ensemble_2.jpeg", plot = p_total2, width = 4700, height = 3066, units = c("px"), dpi = 300, bg = "white")
+  ggsave(filename = "PLOTS/ENSEMBLE/WIS_ensemble_3.jpeg", plot = p_total3, width = 4900, height = 5366, units = c("px"), dpi = 300, bg = "white") 
 }
 
 
@@ -299,8 +299,8 @@ if (FALSE) {
   # Per quantile: `aggregate_total = FALSE` and `indep_quant = TRUE`
   # Per horizon: `aggregate_total = FALSE` and `indep_quant = FALSE`
   
-  aggregate_total <- FALSE
-  indep_quant <- TRUE
+  aggregate_total <- TRUE
+  indep_quant <- FALSE
   
   formatted_w_hat_file <- paste("RESULTS/w_hat_per_horizon_size_", training_size, "_state_", state, "_age_", age, "_quant_", as.character(quant), "_horiz_", as.character(horiz), ".RDS", sep = "")
   

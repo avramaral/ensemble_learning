@@ -12,6 +12,8 @@ horiz <- TRUE
 data <- read_csv(file = "DATA/data.csv.gz")
 truth_data <- read_csv(file = "DATA/truth_40d.csv.gz")
 
+KIT_frozen_baseline <- data %>% filter(model == "KIT-frozen_baseline")
+
 state <- "DE"
 age   <- "00+"
 
@@ -27,17 +29,32 @@ r <- range(data$forecast_date)
 horizon <- -28:0
 probs <- c(0.025, 0.100, 0.250, 0.500, 0.750, 0.900, 0.975)
 
+KIT_frozen_baseline <- KIT_frozen_baseline %>% filter(forecast_date >= r[1], forecast_date <= r[2], age_group %in% age, location %in% state)
+baseline <- KIT_frozen_baseline %>% filter(location == "DE", age_group == "00+", quantile == 0.5) %>% select(target_end_date, target, value)
+baseline_00 <- baseline %>% filter(target ==   "0 day ahead inc hosp") %>% select(target_end_date, value)
+baseline_14 <- baseline %>% filter(target == "-14 day ahead inc hosp") %>% select(target_end_date, value)
+
+if (TRUE) {
+  tmp_name <- "_also_ensemble"
+  he <- 2800
+  
+  naive_ensemble_file <- paste("DATA/UNTRAINED_ENSEMBLE/naive_ensemble_state_", state, "_age_", age, ".RDS", sep = "")
+  naive_ensemble <- readRDS(file = naive_ensemble_file)
+
+  data <- rbind(data, naive_ensemble)
+  models <- c(models, "Mean", "Median")
+  colors <- c(colors, "#009E73", "#60D1B3")
+} else { tmp_name <- ""; he <- 1850 }
+
 data <- data |> filter(!is.na(quantile), target %in% c("0 day ahead inc hosp", "-14 day ahead inc hosp"))
 data <- data |> pivot_wider(names_from = quantile, values_from = value)
 data$model  <- factor(data$model,  levels = models)
 data$target <- factor(data$target, levels = c("0 day ahead inc hosp", "-14 day ahead inc hosp"))
 
-
-
-plot_nowcast <- function (data, truth_data, hh, ...) {
+plot_nowcast <- function (data, truth_data, hh, baseline_tmp, ...) {
   
   alphas <- setNames(c(0.75, 0.4), c("50%", "95%"))
-  line_colors <- setNames(c("red", "gray"), c("Final", "At time of nowcast"))
+  line_colors <- setNames(c("red", "lightgray"), c("Final", "At time of nowcast"))
   
   x_dates <- as.Date(c("2021-11-15", "2022-04-29"))
   
@@ -47,6 +64,7 @@ plot_nowcast <- function (data, truth_data, hh, ...) {
     geom_ribbon(aes(x = target_end_date, ymin = `0.25` , ymax = `0.75`, alpha = "50%"), fill = "skyblue3") +
     geom_line(aes(x = target_end_date, y = `0.5`), linetype = "solid", linewidth = 0.5, color = "royalblue4") + 
     geom_line(data = truth_data, aes(x = date, y = truth, color = "Final"),  linetype = "solid", linewidth = 0.5)  + 
+    geom_line(data = baseline_tmp, aes(x = target_end_date, y = value, color = "At time of nowcast"),  linetype = "solid", linewidth = 0.5)  + 
     labs(x = NULL, y = "", title = paste("\nHorizon: ", hh, " days", sep = "")) + # y = "COVID-19 7-day hospitalization incidence in Germany") + 
     scale_alpha_manual(
       name = "Nowcasts with \nprediction intervals", values = alphas,
@@ -84,8 +102,8 @@ truth_data_1 <- truth_data |> filter(date >= "2021-11-29", date <= "2022-04-29")
 truth_data_2 <- truth_data |> filter(date >= "2021-11-15", date <= "2022-04-15")
 
 ll <- ggplot() + geom_text(aes(1, 1, label = "COVID-19 7-day hospitalization incidence in Germany"), angle = 90, family = "LM Roman 10", size = 5.5) + theme_void()
-p_total <- ll + (plot_nowcast(data[data$target ==   "0 day ahead inc hosp", ], truth_data_1,   "0") / 
-                 plot_nowcast(data[data$target == "-14 day ahead inc hosp", ], truth_data_2, "-14")) +  
+p_total <- ll + (plot_nowcast(data[data$target ==   "0 day ahead inc hosp", ], truth_data_1,   "0", baseline_00) / 
+                 plot_nowcast(data[data$target == "-14 day ahead inc hosp", ], truth_data_2, "-14", baseline_14)) +  
            plot_annotation(theme = theme(plot.margin = margin())) + 
            plot_layout(widths = c(1, 20), guides = "collect") & theme(legend.position = "right")
-ggsave(filename = paste("PLOTS/nowcast_per_horizon.jpeg", sep = ""), plot = p_total, width = 3500, height = 1850, units = c("px"), dpi = 300, bg = "white") 
+ggsave(filename = paste("PLOTS/nowcast_per_horizon", tmp_name, ".jpeg", sep = ""), plot = p_total, width = 3500, height = he, units = c("px"), dpi = 300, bg = "white") 

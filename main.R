@@ -65,7 +65,7 @@ post_select_mod <- "KIT"
 
 method <- "Mean" # c("Mean", "Median", "all_quant") # How to summarize the recent past
 
-strata <- "all" # c("states", "ages", "all")
+strata <- "ages" # c("states", "ages", "all")
 
 if (strata == "states") {
   state_idx <- 1:16
@@ -335,7 +335,13 @@ if (length(retrieved_data_files) == 1) {
 # exploratory_wis <- TRUE
 if (exploratory_wis) {
   
-  if (strata == "all") { tmp_models <- models[1:8]; tmp_colors <- colors[1:8] } else { tmp_models <- models[1:7]; tmp_colors <- colors[1:7] }
+  if (strata == "all") { 
+    tmp_models <- models[1:8]; tmp_colors <- colors[1:8] 
+    tmp_models <- models;      tmp_colors <- colors
+  } else { 
+    tmp_models <- models[1:7]; tmp_colors <- colors[1:7] 
+    tmp_models <- models[1:9]; tmp_colors <- colors
+  }
   
   # Make all models comparable: `skip_first_days = 40 + 1`
   skip_first_days <- (uncertain_size + 1) + 30
@@ -344,7 +350,8 @@ if (exploratory_wis) {
   df_wis <- wis_truth$df_wis
   wis_summ <- wis_truth$wis_summ
 
-  coverage_file <- paste("DATA/TRAINING/COVERAGE/coverage_size_", training_size, "_skip_", as.character(skip_recent_days), "_strata_", strata, "_quant_", as.character(quant), "_horiz_", as.character(horiz), ".RDS", sep = "")
+  if (TRUE) { tmp_add <- "full_" }
+  coverage_file <- paste("DATA/TRAINING/COVERAGE/coverage_size_", tmp_add, training_size, "_skip_", as.character(skip_recent_days), "_strata_", strata, "_quant_", as.character(quant), "_horiz_", as.character(horiz), ".RDS", sep = "")
   
   if (file.exists(coverage_file)) {
     coverage_models <- readRDS(file = coverage_file)
@@ -359,8 +366,8 @@ if (exploratory_wis) {
   reference_pts_95 <- coverage_models$coverage_95 %>% unlist() %>% round(3) %>% unname()
   if (strata == "all") {
     # reference_pts <- c(182.23, 175.92, 125.06, 135.40, 93.67, 137.85, 143.98, 209.49, 81.95, 80.76)
-    # reference_pts_50 <- c(0.17, 0.19, 0.71, 0.09, 0.20, 0.24, 0.27, 0.18, 0.42, 0.37)
-    # reference_pts_95 <- c(0.49, 0.66, 1.00, 0.27, 0.53, 0.55, 0.65, 0.41, 0.90, 0.75)
+    # reference_pts_50 <- c(0.17, 0.19, 0.71, 0.09, 0.20, 0.24, 0.27, 0.18, 0.42, 0.37) # 
+    # reference_pts_95 <- c(0.49, 0.66, 1.00, 0.27, 0.53, 0.55, 0.65, 0.41, 0.90, 0.75) # 
     wis_bar <- plot_wis_bar(df_wis = df_wis, wis_summ = wis_summ, models = tmp_models, colors = tmp_colors, ylim_manual = 220, skip_space = FALSE)
     coverage_bar <- plot_coverage(coverage_models = coverage_models, models = tmp_models, colors = tmp_colors)
   } else {
@@ -383,14 +390,14 @@ if (exploratory_wis) {
 
   tmp_ttl <- "" # "WIS (original models)"
   p_total <- wis_bar + wis_line_horizon + coverage_bar + plot_annotation(title = tmp_ttl, theme = theme(plot.margin = margin(), text = element_text(size = 14, family = "LM Roman 10")))
-  saveRDS(object = p_total, file = paste("PLOTS/WIS_", strata, "_models.RDS", sep = ""))
-  ggsave(filename = paste("PLOTS/WIS_", strata, "_models.jpeg", sep = ""), plot = p_total, width = 4600, height = 1500, units = c("px"), dpi = 300, bg = "white") 
+  saveRDS(object = p_total, file = paste("PLOTS/WIS_", tmp_add, strata, "_models.RDS", sep = ""))
+  ggsave(filename = paste("PLOTS/WIS_", tmp_add, strata, "_models.jpeg", sep = ""), plot = p_total, width = 4600, height = 1500, units = c("px"), dpi = 300, bg = "white") 
 
   if (FALSE) { # Plot all strata
 
-    p_all    <- readRDS("PLOTS/WIS_all_models.RDS")    &  plot_annotation(title = "National level") & theme(plot.title = element_text(hjust = 0.5, size = 18))
-    p_ages   <- readRDS("PLOTS/WIS_ages_models.RDS")   &  plot_annotation(title = "Age groups")     & theme(plot.title = element_text(hjust = 0.5, size = 18))
-    p_states <- readRDS("PLOTS/WIS_states_models.RDS") &  plot_annotation(title = "States")         & theme(plot.title = element_text(hjust = 0.5, size = 18))
+    p_all    <- readRDS(paste("PLOTS/WIS_", tmp_add, "all_models.RDS",    sep = "")) &  plot_annotation(title = "National level") & theme(plot.title = element_text(hjust = 0.5, size = 18))
+    p_ages   <- readRDS(paste("PLOTS/WIS_", tmp_add, "ages_models.RDS",   sep = "")) &  plot_annotation(title = "Age groups")     & theme(plot.title = element_text(hjust = 0.5, size = 18))
+    p_states <- readRDS(paste("PLOTS/WIS_", tmp_add, "states_models.RDS", sep = "")) &  plot_annotation(title = "States")         & theme(plot.title = element_text(hjust = 0.5, size = 18))
     
     t_all    <- grid::textGrob("National level", gp = gpar(fontfamily = "LM Roman 10", cex = 1.5))
     t_ages   <- grid::textGrob("Age groups",     gp = gpar(fontfamily = "LM Roman 10", cex = 1.5))
@@ -403,7 +410,7 @@ if (exploratory_wis) {
     p_total3 <-   wrap_elements(c_all    + plot_annotation(theme = theme(plot.margin = margin(-15, 0, -5, 0)))) /
                   wrap_elements(c_states + plot_annotation(theme = theme(plot.margin = margin(-15, 0, -5, 0)))) /
                   wrap_elements(c_ages   + plot_annotation(theme = theme(plot.margin = margin(-15, 0, -5, 0))))
-    ggsave(filename = "PLOTS/WIS_3.jpeg", plot = p_total3, width = 4500, height = 4600, units = c("px"), dpi = 300, bg = "white") 
+    ggsave(filename = paste("PLOTS/WIS_", tmp_add, "3.jpeg", sep = ""), plot = p_total3, width = 4700, height = 4600, units = c("px"), dpi = 300, bg = "white") 
   }
 }
 
