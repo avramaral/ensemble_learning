@@ -1,3 +1,3 @@
-## Data-driven Post-processing and Ensembling of Infectious Disease Nowcasts
+## Post-processing and weighted combination of infectious disease nowcasts
 
-> **Amaral, AVR**, Wolffram, D, Moraga, P, and Bracher, J (2023+). *Data-driven post-processing and ensembling of infectious disease nowcasts*. In preparation.
+> **Amaral, AVR**, Wolffram, D, Moraga, P, and Bracher, J (2024). Post-processing and weighted combination of infectious disease nowcasts. [https://doi.org/10.1101/2024.08.28.24312701](https://doi.org/10.1101/2024.08.28.24312701).
