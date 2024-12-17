@@ -65,7 +65,7 @@ post_select_mod <- "KIT"
 
 method <- "Mean" # c("Mean", "Median", "all_quant") # How to summarize the recent past
 
-strata <- "ages" # c("states", "ages", "all")
+strata <- "all" # c("states", "ages", "all")
 
 if (strata == "states") {
   state_idx <- 1:16
@@ -332,7 +332,7 @@ if (length(retrieved_data_files) == 1) {
 # Compute WIS for all models, given truth final data (exploratory analysis)
 ##################################################
 
-# exploratory_wis <- TRUE
+exploratory_wis <- TRUE
 if (exploratory_wis) {
   
   if (strata == "all") { 
@@ -360,6 +360,19 @@ if (exploratory_wis) {
     saveRDS(object = coverage_models, file = coverage_file)
   }
   
+  
+  ############################################
+  # Compute WIS for the baseline model (NEW) #
+  ############################################
+  
+  # Filtering is based on the `ensemble_data` object
+  tmp_baseline_data <- KIT_frozen_baseline %>% filter(location %in% unique(data$location), age_group %in% unique(data$age_group), forecast_date >= range(data$forecast_date)[1], forecast_date <= range(data$forecast_date)[2])
+  
+  wis_baseline <- compute_wis_truth(data = tmp_baseline_data, truth_data = truth_data, models = "KIT-frozen_baseline", horizon = horizon, start_date = r[1], end_date = r[2], skip_first_days = skip_first_days, strata = strata)
+  df_wis_baseline <- wis_baseline$df_wis
+  
+  ############################################
+  
   # Bar plot
   reference_pts <- df_wis %>% group_by(model) %>% mutate(total = sum(wis)) %>% ungroup() %>% select(total) %>% c() %>% unlist() %>% unname() %>% unique() %>% round(2)
   reference_pts_50 <- coverage_models$coverage_50 %>% unlist() %>% round(3) %>% unname()
@@ -368,7 +381,7 @@ if (exploratory_wis) {
     # reference_pts <- c(182.23, 175.92, 125.06, 135.40, 93.67, 137.85, 143.98, 209.49, 81.95, 80.76)
     # reference_pts_50 <- c(0.17, 0.19, 0.71, 0.09, 0.20, 0.24, 0.27, 0.18, 0.42, 0.37) # 
     # reference_pts_95 <- c(0.49, 0.66, 1.00, 0.27, 0.53, 0.55, 0.65, 0.41, 0.90, 0.75) # 
-    wis_bar <- plot_wis_bar(df_wis = df_wis, wis_summ = wis_summ, models = tmp_models, colors = tmp_colors, ylim_manual = 220, skip_space = FALSE)
+    wis_bar <- plot_wis_bar(df_wis = df_wis, wis_summ = wis_summ, models = tmp_models, colors = tmp_colors, ylim_manual = 220, skip_space = FALSE, df_wis_baseline = df_wis_baseline)
     coverage_bar <- plot_coverage(coverage_models = coverage_models, models = tmp_models, colors = tmp_colors)
   } else {
     # Ages
@@ -380,7 +393,7 @@ if (exploratory_wis) {
     # reference_pts_50 <- c(0.378, 0.575, 0.301, 0.309, 0.156, 0.368, 0.197)
     # reference_pts_95 <- c(0.781, 0.956, 0.658, 0.662, 0.316, 0.776, 0.456)
     if (strata == "states") { ylim_manual <- 25 } else if (strata == "ages") { ylim_manual <- 40 }
-    wis_bar <- plot_wis_bar_stratified_simplified(df_wis = df_wis, wis_summ = wis_summ, models = tmp_models, colors = tmp_colors, ylim_manual = ylim_manual, skip_space = FALSE)
+    wis_bar <- plot_wis_bar_stratified_simplified(df_wis = df_wis, wis_summ = wis_summ, models = tmp_models, colors = tmp_colors, ylim_manual = ylim_manual, skip_space = FALSE, df_wis_baseline = df_wis_baseline)
     coverage_bar <- plot_coverage_stratified(coverage_models = coverage_models, models = tmp_models, colors = tmp_colors)
   }
 
@@ -393,7 +406,7 @@ if (exploratory_wis) {
   saveRDS(object = p_total, file = paste("PLOTS/WIS_", tmp_add, strata, "_models.RDS", sep = ""))
   ggsave(filename = paste("PLOTS/WIS_", tmp_add, strata, "_models.jpeg", sep = ""), plot = p_total, width = 4600, height = 1500, units = c("px"), dpi = 300, bg = "white") 
 
-  if (FALSE) { # Plot all strata
+  if (TRUE) { # Plot all strata
 
     p_all    <- readRDS(paste("PLOTS/WIS_", tmp_add, "all_models.RDS",    sep = "")) &  plot_annotation(title = "National level") & theme(plot.title = element_text(hjust = 0.5, size = 18))
     p_ages   <- readRDS(paste("PLOTS/WIS_", tmp_add, "ages_models.RDS",   sep = "")) &  plot_annotation(title = "Age groups")     & theme(plot.title = element_text(hjust = 0.5, size = 18))

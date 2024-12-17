@@ -3,11 +3,13 @@
 ##################################################
 ##################################################
 
-plot_wis_bar <- function (df_wis, wis_summ, models, colors, ylim_manual = 200, skip_space = FALSE, reference_pts = NULL, ...) {
+plot_wis_bar <- function (df_wis, wis_summ, models, colors, ylim_manual = 200, skip_space = FALSE, skip_first = 1:8, skip_last = 9:10, reference_pts = NULL, change_name_select = FALSE, df_wis_baseline = NULL, add_best_ind_models = FALSE, ...) {
+  
+  if (!is.null(df_wis_baseline)) { total_baseline <- sum(df_wis_baseline$wis) }
   
   if (!is.null(reference_pts) &  skip_space) {
-    reference_pts <- data.frame(model = c(models[1:8], "space", models[9:10]), value = c(reference_pts[1:8], NA, reference_pts[9:10]))
-    reference_pts$model <- factor(x = reference_pts$model, levels = c(models[1:8], "space", models[9:10]), labels = c(models[1:8], "space", models[9:10]))
+    reference_pts <- data.frame(model = c(models[skip_first], "space", models[skip_last]), value = c(reference_pts[skip_first], NA, reference_pts[skip_last]))
+    reference_pts$model <- factor(x = reference_pts$model, levels = c(models[skip_first], "space", models[skip_last]), labels = c(models[skip_first], "space", models[skip_last]))
   }
   
   if (!is.null(reference_pts) & !skip_space) {
@@ -26,16 +28,29 @@ plot_wis_bar <- function (df_wis, wis_summ, models, colors, ylim_manual = 200, s
     df_wis <- rbind(df_wis, c(as.factor("space"), 0, "sprd"))
     df_wis <- rbind(df_wis, c(as.factor("space"), 0, "over"))
     df_wis <- rbind(df_wis, c(as.factor("space"), 0, "undr"))
-    df_wis$model <- factor(x = df_wis$model, levels = c(models[1:8], "space", models[9:10]), labels = c(models[1:8], "space", models[9:10]))
+    df_wis$model <- factor(x = df_wis$model, levels = c(models[skip_first], "space", models[skip_last]), labels = c(models[skip_first], "space", models[skip_last]))
     df_wis$wis <- as.numeric(df_wis$wis)
   }
 
+  if (change_name_select) { 
+    models <- c("Mean", "Median", "Post-Mean", "Post-Median", "Mean-Post", "Median-Post", "DISW 1", "DISW 2", "DISW 3", "DISW 4", "AISW 1", "AISW 2", "AISW 3", "AISW 4", "Select-4 Mean 2", "Select-4 Median 2")
+  }
+  
   if (skip_space) {
-    colors_ordered <- c(colors[1:8], "cyan", colors[9:10])
-    names(colors_ordered) <- c(models[1:8], "space", models[9:10])
+    colors_ordered <- c(colors[skip_first], "cyan", colors[skip_last])
+    names(colors_ordered) <- c(models[skip_first], "space", models[skip_last])
   } else {
     colors_ordered <- colors
     names(colors_ordered) <- models
+  }
+  
+  if (change_name_select) {
+    df_wis <- df_wis %>% mutate(model = as.character(model)) %>% mutate(model = ifelse(model == "Select-4 Mean",   "Select-4 Mean 2",   model)) %>% mutate(model = as.factor(model))
+    df_wis <- df_wis %>% mutate(model = as.character(model)) %>% mutate(model = ifelse(model == "Select-4 Median", "Select-4 Median 2", model)) %>% mutate(model = as.factor(model))
+  
+    df_wis_total <- df_wis_total %>% mutate(model = as.character(model)) %>% mutate(model = ifelse(model == "Select-4 Mean",   "Select-4 Mean 2",   model)) %>% mutate(model = as.factor(model))
+    df_wis_total <- df_wis_total %>% mutate(model = as.character(model)) %>% mutate(model = ifelse(model == "Select-4 Median", "Select-4 Median 2", model)) %>% mutate(model = as.factor(model))
+    
   }
   
   pp <- ggplot() +
@@ -57,17 +72,69 @@ plot_wis_bar <- function (df_wis, wis_summ, models, colors, ylim_manual = 200, s
       labels = c("Overprediction", "Spread", "Underprediction"),
       guide = guide_legend(reverse = TRUE, title.position = "top", title.hjust = 0.5)
     ) +
-    { if ( skip_space) scale_x_discrete(limits = rev(c(models[1:8], "space", models[9:10])), labels = rev(c(models[1:8], " ", models[9:10])), drop = FALSE) } +
+    { if ( skip_space) scale_x_discrete(limits = rev(c(models[skip_first], "space", models[skip_last])), labels = rev(c(models[skip_first], " ", models[skip_last])), drop = FALSE) } +
     { if (!skip_space) scale_x_discrete(limits = rev(models), drop = FALSE) } +
+    #####################
+    # Add second x-axis #
+    #####################
+    { if (!is.null(df_wis_baseline)) scale_y_continuous(name = "WIS (Averaged all)", limits = c(0, ylim_manual), sec.axis = sec_axis(~ . / total_baseline, name = "Relative WIS") ) } +
+    { if ( is.null(df_wis_baseline)) ylim(0, ylim_manual) } +
+    #####################
+    # + best ind models #
+    #####################
+    # { if (add_best_ind_models) geom_hline(yintercept = c(93.67), linetype = "solid",  color = "#444444FF") } +
+    # { if (add_best_ind_models) geom_hline(yintercept = c(89.26), linetype = "dotted", color = "#444444FF") } +
+    { if (add_best_ind_models) geom_hline(aes(yintercept = 93.67, linetype = "without post-processing"), color = "#444444FF") } +
+    { if (add_best_ind_models) geom_hline(aes(yintercept = 89.26, linetype = "with post-processing"),    color = "#444444FF") } +
+    scale_linetype_manual(name = "Best individual model",
+      values = c("without post-processing" = "solid", "with post-processing" = "dotted")
+    ) +
+    #####################
+    # Arrange legends #
+    #####################
+    guides(
+      alpha =    guide_legend(order = 1, title.position = "top"),
+      linetype = guide_legend(order = 2, title.position = "top")
+    ) +
+    #####################
     labs(x = NULL, y = "WIS (Averaged all)", color = "Model", alpha = "Decomposition of WIS") +
-    ylim(0, ylim_manual) +
     coord_flip() +
     theme_bw() +
-    theme(legend.position = "bottom", text = element_text(size = 16, family = "LM Roman 10"), 
-          axis.ticks.y = element_blank()
-    )
+    theme(legend.position = "bottom", 
+          legend.box = "vertical", # Stack legends vertically
+          legend.title.align = 0.5,  # Centre-align legend titles
+          legend.text.align = 0.5,   # Centre-align legend text
+          legend.box.just = "center", # Centre the entire legend box
+          text = element_text(size = 16, family = "LM Roman 10"), 
+          axis.ticks.y = element_blank())
   
   pp
+}
+
+create_line_legend <- function (...) {
+  legend_data <- data.frame(
+    x = c(1, 2),
+    y = c(1, 1),
+    linetype = c("Without post-processing", "With post-processing")
+  )
+  
+  line_legend <- ggplot(legend_data, aes(x = x, y = y, linetype = linetype)) +
+    geom_line(size = 0.65, colour = "#444444FF") +
+    scale_linetype_manual(name = "Best individual model", values = c("Without post-processing" = "solid", "With post-processing" = "dotted")) +
+    theme_minimal() +
+    theme(legend.position = "bottom", text = element_text(size = 16, family = "LM Roman 10"),
+          legend.key.width = unit(2.25, "lines"),
+          legend.key.height = unit(0.1, "lines")) + 
+    guides(linetype = guide_legend(title.position = "top", title.hjust = 0.5))
+  
+  # Extract the legend as a grob
+  legend_best_ind_models <- get_legend(line_legend)
+  
+  empty_plot <- ggplot() + theme_void()
+  
+  combined_legend <- plot_grid(empty_plot, legend_best_ind_models, nrow = 1, rel_widths = c(0.16, 0.84))
+  
+  combined_legend
 }
 
 ##################################################
@@ -146,7 +213,9 @@ plot_wis_bar_stratified <- function (df_wis, wis_summ, models, colors, ylim_manu
 
 ##################################################
 
-plot_wis_bar_stratified_simplified <- function (df_wis, wis_summ, models, colors, ylim_manual = 200, reference_pts = NULL, ...) {
+plot_wis_bar_stratified_simplified <- function (df_wis, wis_summ, models, colors, ylim_manual = 200, reference_pts = NULL, df_wis_baseline = NULL, ...) {
+  
+  if (!is.null(df_wis_baseline)) { total_baseline <- sum(df_wis_baseline$wis) }
   
   nm <- length(models)
   
@@ -192,8 +261,14 @@ plot_wis_bar_stratified_simplified <- function (df_wis, wis_summ, models, colors
       guide = guide_legend(reverse = TRUE, title.position = "top", title.hjust = 0.5)
     ) +
     { scale_x_discrete(limits = rev(models), drop = FALSE) } +
+    #####################
+    # Add second x-axis #
+    #####################
+    { if (!is.null(df_wis_baseline)) scale_y_continuous(name = "WIS (Averaged all)", limits = c(0, ylim_manual), sec.axis = sec_axis(~ . / total_baseline, name = "Relative WIS") ) } +
+    { if ( is.null(df_wis_baseline)) ylim(0, ylim_manual) } +
+    #####################
     labs(x = NULL, y = "WIS (Averaged all)", color = "Model", alpha = "Decomposition of WIS") +
-    ylim(0, ylim_manual) +
+    # ylim(0, ylim_manual) +
     coord_flip() +
     theme_bw() +
     theme(legend.position = "bottom", text = element_text(size = 16, family = "LM Roman 10"), 
@@ -205,7 +280,9 @@ plot_wis_bar_stratified_simplified <- function (df_wis, wis_summ, models, colors
 
 ##################################################
 
-plot_wis_bar_ensemble <- function (df_wis, wis_summ, models, colors, ylim_manual = 200, ...) {
+plot_wis_bar_ensemble <- function (df_wis, wis_summ, models, colors, ylim_manual = 200, skip_space = FALSE, skip_first = 1:2, skip_last = 3:6, df_wis_baseline = df_wis_baseline, add_best_ind_models = FALSE, best_ind_models = c(0, 0), ...) {
+  
+  if (!is.null(df_wis_baseline)) { total_baseline <- sum(df_wis_baseline$wis) }
   
   # Compute the total WIS based on the 3-part decomposition
   df_wis_total <- data.frame(model = rep(NA, length(models)), wis = rep(NA, length(models)))
@@ -214,8 +291,22 @@ plot_wis_bar_ensemble <- function (df_wis, wis_summ, models, colors, ylim_manual
   tmp_wis <- Reduce(`+`, wis_summ) / length(wis_summ)
   df_wis_total$wis <- tmp_wis
   
-  colors_ordered <- colors
-  names(colors_ordered) <- models
+  if (skip_space) {
+    df_wis$model <- as.character(df_wis$model)
+    df_wis <- rbind(df_wis, c(as.factor("space"), 0, "sprd"))
+    df_wis <- rbind(df_wis, c(as.factor("space"), 0, "over"))
+    df_wis <- rbind(df_wis, c(as.factor("space"), 0, "undr"))
+    df_wis$model <- factor(x = df_wis$model, levels = c(models[skip_first], "space", models[skip_last]), labels = c(models[skip_first], "space", models[skip_last]))
+    df_wis$wis <- as.numeric(df_wis$wis)
+  }
+  
+  if (skip_space) {
+    colors_ordered <- c(colors[skip_first], "cyan", colors[skip_last])
+    names(colors_ordered) <- c(models[skip_first], "space", models[skip_last])
+  } else {
+    colors_ordered <- colors
+    names(colors_ordered) <- models
+  }
 
   pp <- ggplot() +
     geom_bar(data = df_wis, aes(x = model, y = wis), fill = "white", stat = "identity") +
@@ -235,9 +326,22 @@ plot_wis_bar_ensemble <- function (df_wis, wis_summ, models, colors, ylim_manual
       labels = c("Overprediction", "Spread", "Underprediction"),
       guide = guide_legend(reverse = TRUE, title.position = "top", title.hjust = 0.5)
     ) +
-    scale_x_discrete(limits = rev(models), drop = FALSE) +
+    # scale_x_discrete(limits = rev(models), drop = FALSE) +
+    { if ( skip_space) scale_x_discrete(limits = rev(c(models[skip_first], "space", models[skip_last])), labels = rev(c(models[skip_first], " ", models[skip_last])), drop = FALSE) } +
+    { if (!skip_space) scale_x_discrete(limits = rev(models), drop = FALSE) } +
+    #####################
+    # Add second x-axis #
+    #####################
+    { if (!is.null(df_wis_baseline)) scale_y_continuous(name = "WIS (Averaged all)", limits = c(0, ylim_manual), sec.axis = sec_axis(~ . / total_baseline, name = "Relative WIS") ) } +
+    { if ( is.null(df_wis_baseline)) ylim(0, ylim_manual) } +
+    #####################
+    # + best ind models #
+    #####################
+    { if (add_best_ind_models) geom_hline(yintercept = c(best_ind_models[1]), linetype = "solid", color = "#444444FF") } +
+    { if (add_best_ind_models) geom_hline(yintercept = c(best_ind_models[2]), linetype = "dotted", color = "#444444FF") } +
+    #####################
     labs(x = NULL, y = "WIS (Averaged all)", color = "Model", alpha = "Decomposition of WIS") +
-    ylim(0, ylim_manual) +
+    # ylim(0, ylim_manual) +
     coord_flip() +
     theme_bw() +
     theme(legend.position = "bottom", text = element_text(size = 16, family = "LM Roman 10"), 
@@ -314,8 +418,10 @@ plot_wis_bar_ensemble_old <- function (df_wis, wis_summ, models, colors, ylim_ma
 
 ##################################################
 
-plot_wis_bar_size <- function (df_wis, wis_summ, models, colors, ylim_manual = 100, skip_space = TRUE, ...) {
+plot_wis_bar_size <- function (df_wis, wis_summ, models, colors, ylim_manual = 100, skip_space = FALSE, skip_first = 1:2, skip_last = 3:5, df_wis_baseline = NULL, ...) {
 
+  if (!is.null(df_wis_baseline)) { total_baseline <- sum(df_wis_baseline$wis) }
+  
   # Compute the total WIS based on the 3-part decomposition
   df_wis_total <- data.frame(model = rep(NA, length(models)), wis = rep(NA, length(models)))
   df_wis_total$model <- models
@@ -327,13 +433,14 @@ plot_wis_bar_size <- function (df_wis, wis_summ, models, colors, ylim_manual = 1
     df_wis <- rbind(df_wis, c(as.factor("space"), 0, "sprd"))
     df_wis <- rbind(df_wis, c(as.factor("space"), 0, "over"))
     df_wis <- rbind(df_wis, c(as.factor("space"), 0, "undr"))
-    df_wis$model <- factor(x = df_wis$model, levels = c(models[1:3], "space", models[4:5]), labels = c(models[1:3], "space", models[4:5]))
+    df_wis$model <- factor(x = df_wis$model, levels = c(models[skip_first], "space", models[skip_last]), labels = c(models[skip_first], "space", models[skip_last]))
     df_wis$wis <- as.numeric(df_wis$wis)
   }
   
+  
   if (skip_space) {
-    colors_ordered <- c(colors[1:3], "cyan", colors[4:5])
-    names(colors_ordered) <- c(models[1:3], "space", models[4:5])
+    colors_ordered <- c(colors[skip_first], "cyan", colors[skip_last])
+    names(colors_ordered) <- c(models[skip_first], "space", models[skip_last])
   } else {
     colors_ordered <- colors
     names(colors_ordered) <- models
@@ -357,10 +464,16 @@ plot_wis_bar_size <- function (df_wis, wis_summ, models, colors, ylim_manual = 1
       labels = c("Overprediction", "Spread", "Underprediction"),
       guide = guide_legend(reverse = TRUE, title.position = "top", title.hjust = 0.5)
     ) +
-    { if ( skip_space) scale_x_discrete(limits = rev(c(models[1:3], "space", models[4:5])), labels = rev(c(models[1:3], " ", models[4:5])), drop = FALSE) } +
+    { if ( skip_space) scale_x_discrete(limits = rev(c(models[skip_first], "space", models[skip_last])), labels = rev(c(models[skip_first], " ", models[skip_last])), drop = FALSE) } +
     { if (!skip_space) scale_x_discrete(limits = rev(models), drop = FALSE) } +
+    #####################
+    # Add second x-axis #
+    #####################
+    { if (!is.null(df_wis_baseline)) scale_y_continuous(name = "WIS (Averaged all)", limits = c(0, ylim_manual), sec.axis = sec_axis(~ . / total_baseline, name = "Relative WIS") ) } +
+    { if ( is.null(df_wis_baseline)) ylim(0, ylim_manual) } +
+    #####################
     labs(x = NULL, y = "WIS (Averaged all)", color = "Model", alpha = "Decomposition of WIS") +
-    ylim(0, ylim_manual) +
+    # ylim(0, ylim_manual) +
     coord_flip() +
     theme_bw() +
     theme(legend.position = "bottom", text = element_text(size = 16, family = "LM Roman 10"), 
@@ -439,11 +552,11 @@ plot_postprocessed_models <- function (data, nowcasts, truth_data, model, r, tra
       name = "Truth", values = line_colors,
       guide = guide_legend(order = 1, title.position = "top", title.hjust = 0)
     ) +
-    scale_y_continuous(breaks = c(5000, 10000, 15000), limits = c(2500, 17500)) +
+    scale_y_continuous(breaks = c(0, 5000, 10000, 15000), limits = c(0, 17500)) +
     xlim(x_dates) + 
     theme_bw() +
     theme(
-      plot.title = element_text(size = 10, hjust = 0.5, face = "bold"),
+      plot.title = element_text(size = 10, hjust = 0.5),
       legend.position = "bottom",
       legend.title = element_text(size = 11),
       legend.text = element_text(size = 11),
@@ -540,9 +653,12 @@ plot_postprocessed_models <- function (data, nowcasts, truth_data, model, r, tra
   
   
   p3 <- ggplot(data = wis_days, aes(x = forecast_date, y = value, color = model)) +
-    geom_line(linewidth = 1, alpha = rep(ifelse(unique(wis_days$forecast_date) < (r_1 + uncertain_size + 1), 0.25, 1), 2)) +
-    geom_vline(xintercept = as.numeric(r_1 + uncertain_size + r_e + 1), linetype = "dashed") + 
-    geom_vline(xintercept = as.numeric(r_1 + uncertain_size + r_e + 1 + extra_skip), linetype = "dashed") + 
+    # geom_line(linewidth = 1, alpha = rep(ifelse(unique(wis_days$forecast_date) < (r_1 + uncertain_size + 1), 0.25, 1), 2)) +
+    geom_line(linewidth = 1, alpha = rep(ifelse(unique(wis_days$forecast_date) < (r_1 - 1 + 30 + uncertain_size), 0.25, 1), 2)) +
+    # geom_vline(xintercept = as.numeric(r_1 + uncertain_size + r_e + 1), linetype = "dashed") + 
+    # geom_vline(xintercept = as.numeric(r_1 + uncertain_size + r_e + 1 + extra_skip), linetype = "dashed") + 
+    geom_vline(xintercept = as.numeric(r_1 - 1 + 30 + uncertain_size), linetype = "dashed") + 
+    geom_vline(xintercept = as.numeric(r_1 - 1 + 30 + uncertain_size - 40), linetype = "dashed") + 
     scale_color_manual(NULL, values = cmb_colors) +
     expand_limits(y = c(0, max_y)) +
     xlim(c(r_1, r_2)) +
@@ -569,13 +685,16 @@ plot_postprocessed_models <- function (data, nowcasts, truth_data, model, r, tra
 plotting_summarized_weights <- function (w_hat, r, models, colors, uncertain_size = 40, extra_skip = 0, y_max = NULL, ...) {
   names(colors) <- models
   alphas <- c(1, 2)
-  w_hat <- w_hat |> add_column(aa = factor(ifelse(w_hat$forecast_date <= (r[1] + uncertain_size), alphas[1], alphas[2])))
+  
+  # w_hat <- w_hat |> add_column(aa = factor(ifelse(w_hat$forecast_date <= (r[1] + uncertain_size), alphas[1], alphas[2])))
+  w_hat <- w_hat |> add_column(aa = factor(ifelse(w_hat$forecast_date <= (r[1] + 30 + uncertain_size), alphas[1], alphas[2])))
   ifelse(length(unique(w_hat$aa)) == 1, rr <- 1, rr <- c(0.25, 1))
   pp <- w_hat %>% 
     ggplot(aes(fill = as.factor(model), x = forecast_date)) +
     geom_bar(aes(y = value, alpha = aa), position = "stack", stat = "identity") +
-    geom_vline(xintercept = as.numeric(r[1] + (uncertain_size + 1)) - 0.5, linetype = "dashed") + 
-    geom_vline(xintercept = as.numeric(r[1] + (uncertain_size + 1)  + extra_skip) - 0.5, linetype = "dashed") + 
+    # geom_vline(xintercept = as.numeric(r[1] + (uncertain_size + 1)) - 0.5, linetype = "dashed") + 
+    # geom_vline(xintercept = as.numeric(r[1] + (uncertain_size + 1)  + extra_skip) - 0.5, linetype = "dashed") + 
+    geom_vline(xintercept = as.numeric(r[1] + 1 + 30 + uncertain_size - 0.5), linetype = "dashed") + 
     { if (!is.null(y_max)) geom_hline(yintercept = 1, linetype = "dashed")  } +
     scale_fill_manual("Models", values = colors) +
     scale_alpha_manual(values = rr, guide = "none") +
@@ -637,15 +756,17 @@ plotting_quantile_weights_v2 <- function (w_hat, r, models, colors, uncertain_si
   names(colors) <- models
   
   alphas <- c(1, 2)
-  w_hat <- w_hat |> add_column(aa = factor(ifelse(w_hat$forecast_date <= (r[1] + 40), alphas[1], alphas[2])))
+  # w_hat <- w_hat |> add_column(aa = factor(ifelse(w_hat$forecast_date <= (r[1] + 40), alphas[1], alphas[2])))
+  w_hat <- w_hat |> add_column(aa = factor(ifelse(w_hat$forecast_date <= (r[1] + 30 + uncertain_size), alphas[1], alphas[2])))
   if (length(unique(w_hat$aa)) == 1) { af <- 1 } else { af <- c(0.25, 1) }
   w_hat$quant <- factor(w_hat$quant)
   
   pp <- ggplot(w_hat, aes(fill = as.factor(model), x = forecast_date)) +
     facet_wrap("quant", scales = "fixed", ncol = 3) +
     geom_bar(aes(y = value, alpha = aa), position = "stack", stat = "identity") + # c(fill, stack)
-    geom_vline(xintercept = as.numeric(r[1] + (uncertain_size + 1)) - 0.5, linetype = "dashed") + 
-    geom_vline(xintercept = as.numeric(r[1] + (uncertain_size + 1)  + extra_skip) - 0.5, linetype = "dashed") + 
+    # geom_vline(xintercept = as.numeric(r[1] + (uncertain_size + 1)) - 0.5, linetype = "dashed") + 
+    # geom_vline(xintercept = as.numeric(r[1] + (uncertain_size + 1)  + extra_skip) - 0.5, linetype = "dashed") + 
+    geom_vline(xintercept = as.numeric(r[1] + 1 + 30 + uncertain_size - 0.5), linetype = "dashed") + 
     { if (!is.null(y_max)) geom_hline(yintercept = 1, linetype = "dashed")  } +
     scale_fill_manual("Models ", values = colors) +
     scale_alpha_manual(values = af, guide = "none") +
@@ -723,7 +844,7 @@ plotting_horizon_weights_v2 <- function (w_hat, r, models, colors, uncertain_siz
   names(colors) <- models
   
   alphas <- c(1, 2)
-  w_hat <- w_hat |> add_column(aa = factor(ifelse(w_hat$forecast_date <= (r[1] + 40), alphas[1], alphas[2])))
+  w_hat <- w_hat |> add_column(aa = factor(ifelse(w_hat$forecast_date <= (r[1] + 30 + uncertain_size), alphas[1], alphas[2])))
   if (length(unique(w_hat$aa)) == 1) { af <- 1 } else { af <- c(0.25, 1) }
   
   w_hat <- w_hat |> filter(horizon %in% hhs)
@@ -739,8 +860,9 @@ plotting_horizon_weights_v2 <- function (w_hat, r, models, colors, uncertain_siz
   pp <- ggplot(w_hat, aes(fill = as.factor(model), x = forecast_date)) +
     { if (!all_same) facet_wrap("horizon", scales = "fixed", ncol = 3) } +
     geom_bar(aes(y = value, alpha = aa), position = "stack", stat = "identity") +
-    geom_vline(xintercept = as.numeric(r[1] + (uncertain_size + 1)) - 0.5, linetype = "dashed") + 
-    geom_vline(xintercept = as.numeric(r[1] + (uncertain_size + 1)  + extra_skip) - 0.5, linetype = "dashed") + 
+    # geom_vline(xintercept = as.numeric(r[1] + (uncertain_size + 1)) - 0.5, linetype = "dashed") + 
+    # geom_vline(xintercept = as.numeric(r[1] + (uncertain_size + 1)  + extra_skip) - 0.5, linetype = "dashed") + 
+    geom_vline(xintercept = as.numeric(r[1] + 1 + 30 + uncertain_size - 0.5), linetype = "dashed") + 
     { if (!is.null(y_max)) geom_hline(yintercept = 1, linetype = "dashed") } +
     scale_fill_manual("Models", values = colors) +
     scale_alpha_manual(values = af, guide = "none") +
@@ -772,16 +894,13 @@ plotting_horizon_weights_v2 <- function (w_hat, r, models, colors, uncertain_siz
 ##################################################
 ##################################################
 
-plot_coverage <- function (coverage_models, models, colors, reference_pts_50 = NULL, reference_pts_95 = NULL, ...) {
+plot_coverage <- function (coverage_models, models, colors, reference_pts_50 = NULL, reference_pts_95 = NULL, change_name_select = FALSE, skip_space = FALSE, skip_first = 1:8, skip_last = 9:10, ...) {
   
   if (!is.null(reference_pts_50) & !is.null(reference_pts_95)) {
     reference_pts <- data.frame(model = models, c50 = reference_pts_50, c95 = reference_pts_95)
     reference_pts$model <- factor(x = models, levels = models, labels = models)
   }
-  
-  colors_ordered <- colors
-  names(colors_ordered) <- models
-  
+ 
   alphas <- setNames(c(0.75, 0.5), c("50%", "95%"))
   
   df_coverage <- as.data.frame(matrix(0, nrow = length(models) * 2, ncol = 4))
@@ -800,6 +919,40 @@ plot_coverage <- function (coverage_models, models, colors, reference_pts_50 = N
   df_coverage$value    <- as.numeric(df_coverage$value)
   df_coverage$alpha_v  <- factor(df_coverage$alpha_v, levels = names(alphas))
   
+  if (skip_space) {
+    df_coverage$model <- as.character(df_coverage$model)
+    df_coverage_1 <- df_coverage[1:(nrow(df_coverage) / 2), ]
+    df_coverage_2 <- df_coverage[((nrow(df_coverage) / 2) + 1):nrow(df_coverage), ]
+    df_coverage_1 <- rbind(df_coverage_1, c("space", "0.50", 0, "50%"))
+    df_coverage_2 <- rbind(df_coverage_2, c("space", "0.95", 0, "95%"))
+    df_coverage_1$model <- factor(x = df_coverage_1$model, levels = c(models[skip_first], "space", models[skip_last]), labels = c(models[skip_first], "space", models[skip_last]))
+    df_coverage_2$model <- factor(x = df_coverage_2$model, levels = c(models[skip_first], "space", models[skip_last]), labels = c(models[skip_first], "space", models[skip_last]))
+    df_coverage <- rbind(df_coverage_1, df_coverage_2)
+    
+    df_coverage$model <- factor(x = df_coverage$model, levels = c(models[skip_first], "space", models[skip_last]), labels = c(models[skip_first], "space", models[skip_last]))
+    df_coverage$value <- as.numeric(df_coverage$value)
+  }
+  
+  if (change_name_select) { 
+    models <- c("Mean", "Median", "Post-Mean", "Post-Median", "Mean-Post", "Median-Post", "DISW 1", "DISW 2", "DISW 3", "DISW 4", "AISW 1", "AISW 2", "AISW 3", "AISW 4", "Select-4 Mean 2", "Select-4 Median 2")
+  }
+  
+  if (skip_space) {
+    colors_ordered <- c(colors[skip_first], "cyan", colors[skip_last])
+    names(colors_ordered) <- c(models[skip_first], "space", models[skip_last])
+  } else {
+    colors_ordered <- colors
+    names(colors_ordered) <- models
+  }
+  
+  colors_ordered <- colors
+  names(colors_ordered) <- models
+  
+  if (change_name_select) {
+    df_coverage <- df_coverage %>% mutate(model = as.character(model)) %>% mutate(model = ifelse(model == "Select-4 Mean",   "Select-4 Mean 2",   model)) %>% mutate(model = as.factor(model))
+    df_coverage <- df_coverage %>% mutate(model = as.character(model)) %>% mutate(model = ifelse(model == "Select-4 Median", "Select-4 Median 2", model)) %>% mutate(model = as.factor(model))
+  }
+  
   pp <- ggplot() + 
     geom_col(data = df_coverage[df_coverage$interval == 0.95, ], aes(x = model, y = value, fill = model, alpha = alpha_v)) +
     geom_col(data = df_coverage[df_coverage$interval == 0.50, ], aes(x = model, y = value, fill = model, alpha = alpha_v)) +
@@ -809,7 +962,8 @@ plot_coverage <- function (coverage_models, models, colors, reference_pts_50 = N
     scale_fill_manual(values = colors_ordered, guide = "none") +
     scale_color_manual(values = colors_ordered, guide = "none") +
     scale_alpha_manual(values = alphas, labels = names(alphas), guide = guide_legend(reverse = TRUE, title.position = "top", title.hjust = 0.5)) +
-    scale_x_discrete(limits = rev(models), drop = FALSE) + 
+    { if ( skip_space) scale_x_discrete(limits = rev(c(models[skip_first], "space", models[skip_last])), labels = rev(c(models[skip_first], " ", models[skip_last])), drop = FALSE) } +
+    { if (!skip_space) scale_x_discrete(limits = rev(models), drop = FALSE) } +
     labs(x = NULL, y = "Empirical coverage (Averaged all)", color = "Model", alpha = "Prediction interval") +
     ylim(c(0, 1)) +
     coord_flip() +
@@ -898,10 +1052,10 @@ plot_coverage_stratified <- function (coverage_models, models, colors, reference
 ##################################################
 ##################################################
 
-plot_coverage_ensemble <- function (coverage_models, models, colors, reference_pts_50 = NULL, reference_pts_95 = NULL, ...) {
+plot_coverage_ensemble <- function (coverage_models, models, colors, reference_pts_50 = NULL, reference_pts_95 = NULL, skip_space = FALSE, skip_first = 1:8, skip_last = 9:10, ...) {
 
-  colors_ordered <- colors
-  names(colors_ordered) <- models
+  # colors_ordered <- colors
+  # names(colors_ordered) <- models
   
   alphas <- setNames(c(0.75, 0.5), c("50%", "95%"))
   
@@ -928,6 +1082,28 @@ plot_coverage_ensemble <- function (coverage_models, models, colors, reference_p
   df_coverage$value    <- as.numeric(df_coverage$value)
   df_coverage$alpha_v  <- factor(df_coverage$alpha_v, levels = names(alphas))
   
+  if (skip_space) {
+    df_coverage$model <- as.character(df_coverage$model)
+    df_coverage_1 <- df_coverage[1:(nrow(df_coverage) / 2), ]
+    df_coverage_2 <- df_coverage[((nrow(df_coverage) / 2) + 1):nrow(df_coverage), ]
+    df_coverage_1 <- rbind(df_coverage_1, c("space", "0.50", 0, "50%"))
+    df_coverage_2 <- rbind(df_coverage_2, c("space", "0.95", 0, "95%"))
+    df_coverage_1$model <- factor(x = df_coverage_1$model, levels = c(models[skip_first], "space", models[skip_last]), labels = c(models[skip_first], "space", models[skip_last]))
+    df_coverage_2$model <- factor(x = df_coverage_2$model, levels = c(models[skip_first], "space", models[skip_last]), labels = c(models[skip_first], "space", models[skip_last]))
+    df_coverage <- rbind(df_coverage_1, df_coverage_2)
+    
+    df_coverage$model <- factor(x = df_coverage$model, levels = c(models[skip_first], "space", models[skip_last]), labels = c(models[skip_first], "space", models[skip_last]))
+    df_coverage$value <- as.numeric(df_coverage$value)
+  }
+  
+  if (skip_space) {
+    colors_ordered <- c(colors[skip_first], "cyan", colors[skip_last])
+    names(colors_ordered) <- c(models[skip_first], "space", models[skip_last])
+  } else {
+    colors_ordered <- colors
+    names(colors_ordered) <- models
+  }
+  
   
   pp <- ggplot() + 
     geom_col(data = df_coverage[df_coverage$interval == 0.95, ], aes(x = model, y = value, fill = model, alpha = alpha_v)) +
@@ -938,7 +1114,9 @@ plot_coverage_ensemble <- function (coverage_models, models, colors, reference_p
     scale_fill_manual(values = colors_ordered, guide = "none") +
     scale_color_manual(values = colors_ordered, guide = "none") +
     scale_alpha_manual(values = alphas, labels = names(alphas), guide = guide_legend(reverse = TRUE, title.position = "top", title.hjust = 0.5)) +
-    scale_x_discrete(limits = rev(models), drop = FALSE) + 
+    #scale_x_discrete(limits = rev(models), drop = FALSE) + 
+    { if ( skip_space) scale_x_discrete(limits = rev(c(models[skip_first], "space", models[skip_last])), labels = rev(c(models[skip_first], " ", models[skip_last])), drop = FALSE) } +
+    { if (!skip_space) scale_x_discrete(limits = rev(models), drop = FALSE) } +
     labs(x = NULL, y = "Empirical coverage (Averaged all)", color = "Model", alpha = "Prediction interval") +
     ylim(c(0, 1)) +
     coord_flip() +

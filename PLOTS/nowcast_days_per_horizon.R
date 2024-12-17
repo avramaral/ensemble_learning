@@ -1,9 +1,9 @@
 source("header.R")
 source("utils.R")
 source("aux.R")
-library("ggh4x")
+library("ggh4x") 
 
-training_size <- 90
+training_size <- 90 
 uncertain_size <- 40
 
 quant <- TRUE 
@@ -34,7 +34,7 @@ baseline <- KIT_frozen_baseline %>% filter(location == "DE", age_group == "00+",
 baseline_00 <- baseline %>% filter(target ==   "0 day ahead inc hosp") %>% select(target_end_date, value)
 baseline_14 <- baseline %>% filter(target == "-14 day ahead inc hosp") %>% select(target_end_date, value)
 
-if (TRUE) {
+if (FALSE) {
   tmp_name <- "_also_ensemble"
   he <- 2800
   
@@ -74,11 +74,11 @@ plot_nowcast <- function (data, truth_data, hh, baseline_tmp, ...) {
       name = "Truth", values = line_colors,
       guide = guide_legend(order = 1, title.position = "top", title.hjust = 0)
     ) +
-    scale_y_continuous(breaks = c(5000, 10000, 15000), limits = c(2500, 17500)) +
+    scale_y_continuous(breaks = seq(0, 15000, 5000), limits = c(0, 17500)) +
     xlim(x_dates) + 
     theme_bw() +
     theme(
-      plot.title = element_text(size = 14, hjust = 0.5, face = "bold"),
+      plot.title = element_text(size = 14, hjust = 0.5),
       legend.position = "right",
       legend.title = element_text(size = 12),
       legend.text = element_text(size = 12),

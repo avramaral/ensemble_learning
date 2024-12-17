@@ -6,7 +6,7 @@ ens_method <- "pinball"
 skip_recent_days <- FALSE 
 method <- "Mean" # c("Mean", "Median", "all_quant") 
 
-training_size <- 90
+training_size <- 90 # 90
 uncertain_size <- 40
 
 quant <- TRUE
@@ -130,7 +130,7 @@ if (strata == "all") {
 
 # Make all models comparable: `skip_first_days = 40` (`+ 1` excluded, since the range for the post-processes data is different)
 # + 30 to exclude the noisy results when skipping the recent past
-if (skip_recent_days) { skip_first_days <-  30 } else { skip_first_days <- uncertain_size + 30 }
+if (skip_recent_days) { skip_first_days <- 30 } else { skip_first_days <- uncertain_size + 30 }
 wis_truth <- compute_wis_truth(data = postprocessed_data, truth_data = truth_data, models = tmp_models, horizon = horizon, start_date = r[1], end_date = r[2], skip_first_days = skip_first_days)
 
 df_wis <- wis_truth$df_wis
@@ -155,8 +155,21 @@ if (include_unw_ensemble) {
   reference_pts_95 <- c(reference_pts_95, 0.90, 0.75)
 }
 
-wis_bar <- plot_wis_bar(df_wis = df_wis, wis_summ = wis_summ, models = tmp_models, colors = tmp_colors, ylim_manual = 220, skip_space = FALSE, reference_pts = reference_pts)
-coverage_bar <- plot_coverage(coverage_models = coverage_models, models = tmp_models, colors = tmp_colors, reference_pts_50 = reference_pts_50, reference_pts_95 = reference_pts_95)
+
+############################################
+# Compute WIS for the baseline model (NEW) #
+############################################
+
+# Filtering is based on the `ensemble_data` object
+tmp_baseline_data <- KIT_frozen_baseline %>% filter(location %in% unique(postprocessed_data$location), age_group == unique(postprocessed_data$age_group), forecast_date >= range(postprocessed_data$forecast_date)[1], forecast_date <= range(postprocessed_data$forecast_date)[2], !is.na(quantile))
+
+wis_baseline <- compute_wis_truth(data = tmp_baseline_data, truth_data = truth_data, models = "KIT-frozen_baseline", horizon = horizon, start_date = r[1], end_date = r[2], skip_first_days = skip_first_days)
+df_wis_baseline <- wis_baseline$df_wis
+
+############################################
+
+wis_bar <- plot_wis_bar(df_wis = df_wis, wis_summ = wis_summ, models = tmp_models, colors = tmp_colors, ylim_manual = 220, skip_space = FALSE, reference_pts = reference_pts, change_name_select = FALSE, df_wis_baseline = df_wis_baseline)
+coverage_bar <- plot_coverage(coverage_models = coverage_models, models = tmp_models, colors = tmp_colors, reference_pts_50 = reference_pts_50, reference_pts_95 = reference_pts_95, change_name_select = FALSE)
 
 # Line plot over the horizons
 df_wis_horizon_truth <- compute_wis_horizon_truth(models = tmp_models, horizon = horizon, wis_summ = wis_summ)
@@ -167,6 +180,12 @@ tmp_ttl <- "" # paste("WIS (post-processed) ", ifelse(horiz, "varying weights ho
 p_total <- wis_bar + wis_line_horizon + coverage_bar + plot_annotation(title = tmp_ttl, theme = theme(plot.margin = margin(), text = element_text(size = 14, family = "LM Roman 10")))
 saveRDS(object = p_total, file = paste("PLOTS/POSTPROCESS/WIS_all_post_skip_", tmp_name, skip_recent_days, "_horiz_", horiz, "_method_", method, ".RDS", sep = ""))
 ggsave(filename = paste("PLOTS/POSTPROCESS/WIS_all_post_skip_", tmp_name, skip_recent_days, "_horiz_", horiz, "_method_", method, ".jpeg", sep = ""), plot = p_total, width = 4600, height = 1500, units = c("px"), dpi = 300, bg = "white")
+
+# Alternative way to combine it, so we can include the title
+t_all    <- grid::textGrob("National level", gp = gpar(fontfamily = "LM Roman 10", cex = 1.5))
+c_all    <- (wrap_elements(panel = t_all)    / p_total)    + plot_layout(heights = c(1, 10))
+ggsave(filename = paste("PLOTS/POSTPROCESS/WIS_all_post_skip_", tmp_name, skip_recent_days, "_horiz_", horiz, "_method_", method, ".jpeg", sep = ""), plot = c_all, width = 4600, height = 1500, units = c("px"), dpi = 300, bg = "white")
+
 
 if (FALSE) { # Plot all training windows
 
@@ -193,7 +212,7 @@ if (FALSE) { # Plot all training windows
 # Must set `hh` to the horizon for the left-most plot
 ##################################################
 
-hh <- 0 # 0 # Horizon for the left-most plot
+hh <- -14 # 0 # Horizon for the left-most plot
 extra_skip <- 30
 if (hh == 0) { baseline_tmp <- baseline_00 } else { baseline_tmp <- baseline_14 }
 
@@ -226,7 +245,8 @@ for (m in 1:length(tmp_models)) {
   ggsave(filename = paste("PLOTS/POSTPROCESS/post_", tmp_char, models[m], "_skip_", skip_recent_days, "_horiz_", horiz, "_method_", method, ".jpeg", sep = ""), plot = postprocessed_plots[[m]]$p_total, width = 3500, height = 1400, units = c("px"), dpi = 300, bg = "white")
 }
 
+# xxx <- postprocessed_plots
 
-
-#p_total_tmp <- postprocessed_plots[[4]]$p_total / xxx[[8]]$p_total ## 0 and (-14) days, respectively (LMU and SZ)
-#ggsave(filename = paste("PLOTS/POSTPROCESS/post_", tmp_char, "skip_", skip_recent_days, "_horiz_", horiz, "_method_", method, "_0_-14.jpeg", sep = ""), plot = p_total_tmp, width = 3500, height = 2800, units = c("px"), dpi = 300, bg = "white")
+# I have to manually load the "-14 days" horizon
+# p_total_tmp <- xxx[[4]]$p_total / postprocessed_plots[[8]]$p_total ## 0 and (-14) days, respectively (LMU and SZ)
+# ggsave(filename = paste("PLOTS/POSTPROCESS/post_", tmp_char, "skip_", skip_recent_days, "_horiz_", horiz, "_method_", method, "_0_-14.jpeg", sep = ""), plot = p_total_tmp, width = 3500, height = 2800, units = c("px"), dpi = 300, bg = "white")

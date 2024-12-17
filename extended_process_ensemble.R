@@ -195,6 +195,18 @@ if (file.exists(compute_wis_file)) {
   saveRDS(object = wis_truth, file = compute_wis_file)
 }
 
+############################################
+# Compute WIS for the baseline model (NEW) #
+############################################
+
+# Filtering is based on the `ensemble_data` object
+tmp_baseline_data <- KIT_frozen_baseline %>% filter(location == "DE", age_group == "00+", forecast_date >= "2022-01-09", forecast_date <= "2022-04-29", !is.na(quantile))
+
+wis_baseline <- compute_wis_truth(data = tmp_baseline_data, truth_data = truth_data, models = "KIT-frozen_baseline", horizon = horizon, start_date = r[1], end_date = r[2], skip_first_days = skip_first_days)
+df_wis_baseline <- wis_baseline$df_wis
+
+############################################
+
 df_wis <- wis_truth$df_wis
 wis_summ <- wis_truth$wis_summ
 
@@ -212,21 +224,27 @@ if (file.exists(coverage_file)) {
 ###
 
 # Bar plot
-wis_bar <- plot_wis_bar(df_wis = df_wis, wis_summ = wis_summ, models = models, colors = colors, ylim_manual = 100, skip_space = FALSE)
+wis_bar <- plot_wis_bar(df_wis = df_wis, wis_summ = wis_summ, models = models, colors = colors, ylim_manual = 100, skip_space = TRUE, skip_first = 1:6, skip_last = 7:16, change_name_select = TRUE, df_wis_baseline = df_wis_baseline, add_best_ind_models = TRUE)
+# wis_bar <- plot_grid(wis_bar, create_line_legend(), ncol = 1, rel_heights = c(1, 0.075))
 
 # Coverage plot
-coverage_bar <- plot_coverage(coverage_models = coverage_models, models = models, colors = colors)
+coverage_bar <- plot_coverage(coverage_models = coverage_models, models = models, colors = colors, change_name_select = TRUE, skip_space = TRUE, skip_first = 1:6, skip_last = 7:16)
 
 # Line plot over the horizons
 df_wis_horizon_truth <- compute_wis_horizon_truth(models = models, horizon = horizon, wis_summ = wis_summ)
 wis_line_horizon <- plot_wis_line_horizon(df_wis_horizon = df_wis_horizon_truth, models = models, colors = colors)
 
 tmp_ttl <- ""
-p_total <- wis_bar + wis_line_horizon + coverage_bar + plot_annotation(title = tmp_ttl, theme = theme(plot.margin = margin(), text = element_text(size = 14, family = "LM Roman 10")))
-ggsave(filename = paste("PLOTS/ENSEMBLE/WIS_all_ensemble.jpeg", sep = ""), plot = p_total, width = 4750, height = 2000, units = c("px"), dpi = 300, bg = "white") 
+p_total <- wis_bar + wis_line_horizon + coverage_bar + plot_annotation(title = tmp_ttl, theme = theme(plot.margin = margin(), text = element_text(size = 14, family = "LM Roman 10"))) + plot_layout(widths = c(1, 1, 1))
+ggsave(filename = paste("PLOTS/ENSEMBLE/WIS_all_ensemble.jpeg", sep = ""), plot = p_total, width = 4900, height = 2000, units = c("px"), dpi = 300, bg = "white") 
 saveRDS(object = p_total, file = paste("PLOTS/ENSEMBLE/WIS_all_ensemble.RDS", sep = ""))
 
-if (FALSE) { # Plot all strata
+# Alternative way to combine it, so we can include the title
+t_all    <- grid::textGrob("National level", gp = gpar(fontfamily = "LM Roman 10", cex = 1.5))
+c_all    <- (wrap_elements(panel = t_all)    / p_total)    + plot_layout(heights = c(1, 10))
+ggsave(filename = paste("PLOTS/ENSEMBLE/WIS_all_ensemble.jpeg", sep = ""), plot = c_all, width = 4900, height = 2500, units = c("px"), dpi = 300, bg = "white") 
+
+if (TRUE) { # Plot all strata
   
   p_all    <- readRDS("PLOTS/ENSEMBLE/WIS_all_ensemble.RDS")    &  plot_annotation(title = "National level") & theme(plot.title = element_text(hjust = 0.5, size = 18))
   p_ages   <- readRDS("PLOTS/ENSEMBLE/STRATIFIED/WIS_ages_ensemble.RDS")   &  plot_annotation(title = "Age groups")     & theme(plot.title = element_text(hjust = 0.5, size = 18))

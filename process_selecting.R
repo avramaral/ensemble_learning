@@ -134,7 +134,7 @@ plot_comb <- function (data, name = "Mean", ylim = c(75, 200), col = "red", ...)
     expand_limits(y = ylim) +
     theme_bw() +
     theme(legend.position = "none",
-          plot.title = element_text(size = 16, hjust = 0.5, face = "bold"),
+          plot.title = element_text(size = 16, hjust = 0.5),
           axis.title.x = element_text(size = 14),
           axis.title.y = element_text(size = 14),
           axis.text = element_text(size = 12),
@@ -143,8 +143,8 @@ plot_comb <- function (data, name = "Mean", ylim = c(75, 200), col = "red", ...)
   p
 }
 
-p1 <- plot_comb(data = sum_mean, name = "Mean", col = "black")
-p2 <- plot_comb(data = sum_median, name = "Median", col = "black")
+p1 <- plot_comb(data = sum_mean, name = "Mean", col = "black", ylim = c(0, 200))
+p2 <- plot_comb(data = sum_median, name = "Median", col = "black", ylim = c(0, 200))
 
 p_total <- p1 + p2 + plot_annotation(theme = theme(plot.margin = margin()))
 p_total
@@ -222,3 +222,4 @@ p_total_updated
 
 saveRDS(object = p_total_updated, file = paste("PLOTS/SELECTION/WIS_selection_horiz_", horiz, ".RDS", sep = ""))
 ggsave(filename = paste("PLOTS/SELECTION/WIS_selection_horiz_", horiz, ".jpeg", sep = ""), plot = p_total_updated, width = 3500, height = 1400, units = c("px"), dpi = 300, bg = "white") 
+

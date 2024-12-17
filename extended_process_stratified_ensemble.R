@@ -149,6 +149,22 @@ if (file.exists(compute_wis_file)) {
 
 ###
 
+############################################
+# Compute WIS for the baseline model (NEW) #
+############################################
+
+# Filtering is based on the `ensemble_data` object
+
+tmp_baseline_data <- KIT_frozen_baseline
+tmp_baseline_data <- tmp_baseline_data[(tmp_baseline_data$forecast_date >= r[1]) & (tmp_baseline_data$forecast_date <= r[2]), ]
+tmp_baseline_data <- tmp_baseline_data %>% filter(location %in% unique(ensemble_data$location), age_group %in% unique(ensemble_data$age_group)) %>% filter(!is.na(quantile))
+
+wis_baseline <- compute_wis_truth(data = tmp_baseline_data, truth_data = truth_data, models = "KIT-frozen_baseline", horizon = horizon, start_date = r[1], end_date = r[2], skip_first_days = skip_first_days, strata = strata)
+df_wis_baseline <- wis_baseline$df_wis
+
+############################################
+
+
 coverage_file <- paste("RESULTS/FITTED_OBJECTS/COVERAGE/coverage_size_", training_size, "_extra_gap_", skip_first_days, "_strata_", strata, ".RDS", sep = "")
 if (file.exists(coverage_file)) {
   coverage_models <- readRDS(file = coverage_file)
@@ -164,10 +180,11 @@ wis_summ <- wis_truth$wis_summ
 
 # Bar plot
 if (strata == "states") { ylim_manual <- 15 } else if (strata == "ages") { ylim_manual <- 20 }
-wis_bar <- plot_wis_bar_ensemble(df_wis = df_wis, wis_summ = wis_summ, models = models, colors = colors, ylim_manual = ylim_manual)
+if (strata == "states") { best_ind_models <- c(0, 0) } else if (strata == "ages") { best_ind_models <- c(0, 0) }
+wis_bar <- plot_wis_bar_ensemble(df_wis = df_wis, wis_summ = wis_summ, models = models, colors = colors, ylim_manual = ylim_manual, skip_space = TRUE, skip_first = 1:2, skip_last = 3:6, df_wis_baseline = df_wis_baseline, add_best_ind_models = FALSE, best_ind_models = best_ind_models)
 
 # Coverage plot
-coverage_bar <- plot_coverage_ensemble(coverage_models = coverage_models, models = models, colors = colors)
+coverage_bar <- plot_coverage_ensemble(coverage_models = coverage_models, models = models, colors = colors, skip_space = TRUE, skip_first = 1:2, skip_last = 3:6)
 
 # Line plot over the horizons
 df_wis_horizon_truth <- compute_wis_horizon_truth(models = models, horizon = horizon, wis_summ = wis_summ)

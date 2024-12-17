@@ -3,7 +3,7 @@ suppressMessages(library("patchwork"))
 DATES <- c("2022-02-01", "2022-03-01", "2022-04-01")
 
 models <- c("Epiforecasts", "ILM", "KIT", "LMU", "RIVM", "RKI", "SU", "SZ", "Mean ensemble", "Median ensemble") 
-colors <- c("#B30000", "#E69F00", "#56B4E9", "#F0E442", "#80471C", "#3C4AAD", "#CC79A7", "#000000", "#009E73", "#60D1B3")
+colors <- c("#B30000", "#E69F00", "#56B4E9", "#D7CB3B", "#80471C", "#3C4AAD", "#CC79A7", "#000000", "#009E73", "#60D1B3")
 
 data_demo <- readRDS(file = "DATA/data_demo.RDS")
 
@@ -18,7 +18,7 @@ r <- range(df_unrevised$date)
 truth_data <- read_csv(file = "DATA/truth_40d.csv.gz")
 truth_data <- truth_data |> filter(location == "DE", age_group == "00+", date >= r[1], date <= r[2]) 
 
-plot_data <- function (i, m, cc = c("#000000", "red", "lightgrey"), ...) {
+plot_data <- function (i, m, cc = c("#000000", "red", "#999999"), ...) {
   pos_model <- which(m == models)
   
   ALPHAS <- setNames(c(0.75, 0.4), c("50%", "95%"))
@@ -44,7 +44,8 @@ plot_data <- function (i, m, cc = c("#000000", "red", "lightgrey"), ...) {
     scale_alpha_manual(name = paste("Nowcasts with prediction \nintervals (", m, ")", sep = ""), values = ALPHAS, guide = guide_legend(title.position = "top", order = 1)) +
     scale_color_manual(name = paste("Data \nversion", sep = ""), values = COLORS, guide = guide_legend(title.position = "top")) + 
     xlim(r) +
-    ylim(c(2500, 13000)) +
+    # ylim(c(2500, 13000)) +
+    scale_y_continuous(breaks = seq(0, 12500, 2500), limits = c(0, 13000)) + 
     labs(x = "", y = "") + # y = "COVID-19 7-day hospitalization incidence in Germany") +
     theme_bw() +
     theme(legend.position = "bottom", legend.direction = "vertical", legend.box = "horizontal",

@@ -97,6 +97,19 @@ skip_first_days <- 30 + uncertain_size
 # Make all models comparable with `skip_first_days`
 wis_truth <- compute_wis_truth(data = ensemble_data, truth_data = truth_data, models = models, horizon = horizon, start_date = r[1], end_date = r[2], skip_first_days = skip_first_days)
 
+
+############################################
+# Compute WIS for the baseline model (NEW) #
+############################################
+
+# Filtering is based on the `ensemble_data` object
+tmp_baseline_data <- KIT_frozen_baseline %>% filter(location %in% unique(ensemble_data$location), age_group %in% unique(ensemble_data$age_group), forecast_date >= range(ensemble_data$forecast_date)[1], forecast_date <= range(ensemble_data$forecast_date)[2], !is.na(quantile))
+
+wis_baseline <- compute_wis_truth(data = tmp_baseline_data, truth_data = truth_data, models = "KIT-frozen_baseline", horizon = horizon, start_date = r[1], end_date = r[2], skip_first_days = skip_first_days)
+df_wis_baseline <- wis_baseline$df_wis
+
+############################################
+
 df_wis <- wis_truth$df_wis
 wis_summ <- wis_truth$wis_summ
 
@@ -110,10 +123,10 @@ if (file.exists(coverage_file)) {
 }
 
 # Bar plot
-wis_bar <- plot_wis_bar_size(df_wis = df_wis, wis_summ = wis_summ, models = models, colors = colors, ylim_manual = 100, skip_space = FALSE)
+wis_bar <- plot_wis_bar_size(df_wis = df_wis, wis_summ = wis_summ, models = models, colors = colors, ylim_manual = 100, skip_space = TRUE, skip_first = 1:2, skip_last = 3:5, df_wis_baseline = df_wis_baseline)
 
 # Coverage plot
-coverage_bar <- plot_coverage(coverage_models = coverage_models, models = models, colors = colors)
+coverage_bar <- plot_coverage(coverage_models = coverage_models, models = models, colors = colors, skip_space = TRUE, skip_first = 1:2, skip_last = 3:5)
 
 # Line plot over the horizons
 df_wis_horizon_truth <- compute_wis_horizon_truth(models = models, horizon = horizon, wis_summ = wis_summ)
